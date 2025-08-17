@@ -1,0 +1,64 @@
+{# apps/iris/templates/iris/user_logs.html #}
+{% extends 'iris_base.html' %} {# base.html에서 부트스트랩 CSS/JS를 불러와야 합니다! #}
+{% block title %}로그 목록{% endblock %}
+{% block iris_content %}
+    <div class="container mt-4"> {# 전체 내용을 감싸는 부트스트랩 컨테이너, 위쪽 여백(margin-top) 4칸 #}
+        {# <h1 class="mb-4">로그 이력</h1> #} {# 제목에 아래쪽 여백(margin-bottom) 4칸 #} 
+        <div class="row">
+        <div class="col-md-12">
+            <h6 class="alert alert-primary">로그 결과</h6>
+        </div>
+        </div>
+        {% if results %}
+            {# 테이블을 반응형으로 만들어 작은 화면에서도 잘 보이게 함 #}
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle"> {# 부트스트랩 테이블 스타일 적용 #}
+                    <thead class="table-dark"> {# 테이블 헤더를 어둡게 #}
+                        <tr>
+                            <th>ID</th>
+                            <th>사용자ID</th>  {# 추가 #}
+                            <th>서비스ID</th>  {# 추가 #}
+                            <th>추론ID</th>  {# 추가 #}
+                            <th>로그타입</th>
+                            <th>엔드포인트</th>
+                            <th>추론시각</th>
+                            <th>로그시각</th>
+                            <th>원격주소</th>
+                            <th>응답상태</th>
+                            <th>로그상태</th>                            
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for result in results %}
+                        <tr>
+                            <td>{{ result.id }}</td>
+                            <td>{{ result.user_id }}</td>
+                            <td>{{ result.service_id }}</td>
+                            {# result의 prediction_result__id 값이 있으면 값 인쇄, 없으면 - 인쇄 #}
+                            <td>
+                                {% if result.prediction_result_id %}
+                                    {{ result.prediction_result_id }}
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            {# 로그 타입에 따라 색상을 다르게 보여줄 수 있도록 클래스 추가 #}
+                            <td><span class="badge {% if result.usage_type == 'UsageType.LOGIN' %}bg-success{% elif result.usage_type == 'UsageType.API_KEY' %}bg-danger{% else %}bg-secondary{% endif %}">{{ result.usage_type }}</span></td>   
+                            <td>{{ result.endpoint }}</td>
+                            <td>{{ result.inference_timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            <td>{{ result.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            <td>{{ result.remote_addr }}</td>
+                            <td>{{ result.response_status_code }}</td>
+                            <td>{{ result.log_status }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div> {# .table-responsive 끝 #}
+        {% else %}
+            <div class="alert alert-info" role="alert"> {# 정보성 알림 메시지 스타일 #}
+                로그 결과가 없습니다. <a href="{{ url_for('iris.iris_predict') }}" class="alert-link">지금 붓꽃 분류하기</a>
+            </div>
+        {% endif %}
+    </div> {# .container 끝 #}
+{% endblock %}

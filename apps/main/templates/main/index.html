@@ -6,7 +6,7 @@
         <div class="container-fluid py-5">
             <h3 class="display-6 fw-bold">서비스 플랫폼에 오신 것을 환영합니다!</h3>
             <p class="col-md-8 fs-4">다양한 서비스를 탐색하고, 자신만의 API 키를 생성하여 손쉽게 이용해보세요.</p>
-            <a class="btn btn-primary btn-lg" href="{{ url_for('main.services') }}" role="button">서비스 둘러보기</a>
+            <a class="btn btn-primary btn-lg" href="{{ url_for('iris.services') }}" role="button">서비스 둘러보기</a>
             <a class="btn btn-outline-secondary btn-lg" href="#" role="button">회원가입</a>
         </div>
     </div>
@@ -15,10 +15,7 @@
             <div class="h-100 p-5 bg-light border rounded-3 shadow-sm">
                 <h2>AI 서비스란?</h2>
                 <p>복잡한 인공지능 모델을 웹 API 형태로 손쉽게 사용할 수 있도록 제공하는 서비스입니다. 붓꽃 분류, 대출 승인 예측 등 다양한 분야의 AI 서비스를 만나보세요.</p>
-{#                <a class="btn btn-outline-secondary" href="{{ url_for('main.services') }}">자세히 보기 &raquo;</a>  #}
                 <a class="btn btn-outline-secondary" href="{{ url_for('iris.services') }}">자세히 보기 &raquo;</a>  
-
-
             </div>
         </div>
         <div class="col-md-6 mb-4">

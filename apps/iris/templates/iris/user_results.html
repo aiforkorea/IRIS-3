@@ -1,0 +1,224 @@
+{# apps/iris/templates/iris/user_results.html #}
+{% extends 'iris_base.html' %}
+{% block title %}
+{% endblock %}
+{% block iris_content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <h6 class="alert alert-primary">추론 결과</h6>
+        </div>
+    </div>
+{# 검색 폼과 서비스 생성 버튼을 포함하는 하나의 행 #}
+<div class="row mb-3 align-items-end"> {# align-items-end: 행 내부 요소를 아래쪽에 정렬합니다. #}
+    {# 검색 폼 영역: 데스크톱에서는 9/12 컬럼, 모바일에서는 12/12 컬럼 #}
+    <div class="col-md-9 col-12">
+        {# <form action="{{ url_for('iris.results') }}" method="GET"> #}
+        <form action="#" method="GET">
+<div class="row g-2 align-items-end">
+    <div class="col-12 col-md-3">
+        <input type="search" name="search" class="form-control"
+                placeholder="예측 품종, 확인 품종 검색"
+                value="{{ search_query or '' }}">
+    </div>
+    <div class="col-6 col-md-2">
+        <select name="confirm" class="form-select" style="font-size: 1rem;">
+            <option value="">확인상태</option>
+            <option value="true" {% if confirm_query == 'true' %}selected{% endif %}>확인완료</option>
+            <option value="false" {% if confirm_query == 'false' %}selected{% endif %}>미확인</option>
+        </select>
+    </div>
+    <div class="col-12 col-md-6">
+        <div class="row g-2 flex-md-nowrap align-items-center">
+            <div class="col-12 col-md-auto">
+                <select name="date_filter_type" class="form-select" style="font-size: 1rem;">
+                    <option value="" {% if not date_filter_type %}selected{% endif %}>기준일자</option>
+                    <option value="created_at" {% if date_filter_type == 'created_at' %}selected{% endif %}>추론일자</option>
+                    <option value="confirmed_at" {% if date_filter_type == 'confirmed_at' %}selected{% endif %}>확인일자</option>
+                </select>
+            </div>
+            <div class="col-12 col-md-4">
+                <input type="date" name="start_date" class="form-control"
+                        style="font-size: 1rem; width: 100%;"
+                        value="{{ start_date or '' }}">
+            </div>
+            <div class="col-auto d-none d-md-flex justify-content-center px-0">
+                <span class="fw-bold">~</span>
+            </div>
+            <div class="col-12 col-md-4">
+                <input type="date" name="end_date" class="form-control"
+                        style="font-size: 1rem; width: 100%;"
+                        value="{{ end_date or '' }}">
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-1 d-grid">
+        <button class="btn btn-primary" type="submit" style="font-size: 1rem;">검색</button>
+    </div>
+</div>
+        </form>
+    </div>
+    {# "다운로드" 버튼 영역: 데스크톱에서는 3/12 컬럼, 모바일에서는 12/12 컬럼 #}
+    <div class="col-md-3 col-12 mt-2 mt-md-0 d-grid d-md-block text-md-end">
+        {# <a href="{{ url_for('adminx.create_service') }}" class="btn btn-primary user-create-btn">서비스 생성</a> #}
+        <a href="#" class="btn btn-primary user-create-btn">다운로드</a>
+    </div>
+</div>
+
+        {% if results %}
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>ID</th>
+                            <th>사용자</th>
+                            <th>꽃받침길이</th>
+                            <th>꽃받침너비</th>
+                            <th>꽃잎길이</th>
+                            <th>꽃잎너비</th>
+                            <th>예측품종</th>
+                            <th>확인품종</th>
+                            <th>추론시간</th>
+                            <th>확인시간</th>
+                            <th>동작</th>
+                            <th>수정</th> {# 수정 컬럼 헤더 추가 #}
+                            <th>삭제</th> {# 삭제 컬럼 헤더 추가 #}           
+                        </tr>
+                    </thead>
+<tbody>
+    {% for result in results %}
+    <tr>
+        <td>{{ result.id }}</td>
+        <td>{{ result.user_id }}</td>
+        <td>{{ result.sepal_length }}</td>
+        <td>{{ result.sepal_width }}</td>
+        <td>{{ result.petal_length }}</td>
+        <td>{{ result.petal_width }}</td>
+        <td><span class="badge {% if result.predicted_class == 'setosa' %}bg-success{% elif result.predicted_class == 'versicolor' %}bg-warning text-dark{% elif result.predicted_class == 'virginica' %}bg-danger{% else %}bg-secondary{% endif %}">{{ result.predicted_class }}</span></td>
+        <td>
+            {% if result.confirmed_class %}
+                <span class="badge {% if result.confirmed_class == 'setosa' %}bg-success{% elif result.confirmed_class == 'versicolor' %}bg-warning text-dark{% elif result.confirmed_class == 'virginica' %}bg-danger{% else %}bg-secondary{% endif %}">{{ result.confirmed_class }}</span>
+            {% else %}
+                미확인
+            {% endif %}
+        </td>
+        <td>{{ result.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+        <td>
+            {% if result.confirmed_at %}
+                {{ result.confirmed_at.strftime('%Y-%m-%d %H:%M:%S') }}
+            {% else %}
+                -
+            {% endif %}
+        </td>
+        <td>
+            {% if not result.confirm %}
+                <form action="{{ url_for('iris.confirm_result', result_id=result.id) }}" method="POST" class="d-inline">
+                    {{ form.csrf_token }}
+                    <div class="input-group">
+                        <select class="form-select form-select-sm" name="confirmed_class">
+                            <option value="setosa">setosa</option>
+                            <option value="versicolor">versicolor</option>
+                            <option value="virginica">virginica</option>
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-primary">확인</button>
+                    </div>
+                </form>
+            {% else %}
+                <span class="badge bg-secondary">확인 완료</span>
+            {% endif %}
+        </td>
+        
+        <td> {# 수정 컬럼 #}
+            {% if result.confirmed_class %}
+                <form action="{{ url_for('iris.edit_confirmed_class', result_id=result.id) }}" method="POST" class="d-inline">
+                    {{ form.csrf_token }}
+                    <div class="input-group">
+                        <select class="form-select form-select-sm" name="confirmed_class">
+                            <option value="setosa" {% if result.confirmed_class == 'setosa' %}selected{% endif %}>setosa</option>
+                            <option value="versicolor" {% if result.confirmed_class == 'versicolor' %}selected{% endif %}>versicolor</option>
+                            <option value="virginica" {% if result.confirmed_class == 'virginica' %}selected{% endif %}>virginica</option>
+                        </select>
+                        <button type="submit" class="btn btn-sm btn-warning">수정</button>
+                    </div>
+                </form>
+            {% else %}
+                - {# 확인된 값이 없으면 아무것도 표시 안함 #}
+            {% endif %}
+        </td>
+        <td> {# 삭제 컬럼 #}
+            <form action="{{ url_for('iris.delete_result', result_id=result.id) }}" method="POST" class="d-inline" onsubmit="return confirm('정말로 이 추론 결과를 삭제하시겠습니까?');">
+                {{ form.csrf_token }} {# CSRF 토큰 추가 #}
+                <button type="submit" class="btn btn-danger btn-sm">삭제</button>
+            </form>
+        </td>
+    </tr>
+    {% endfor %}
+</tbody>
+                </table>
+            </div>
+
+
+{# 페이지네이션 링크 #}
+<nav aria-label="Page navigation">
+    <ul class="pagination justify-content-center">
+        {# '이전' 버튼: 이 부분은 이제 정확합니다. #}
+        {% if pagination.has_prev %}
+        <li class="page-item">
+            <a class="page-link" href="{{ url_for('iris.results', page=pagination.prev_num, search=search_query, confirm=confirm_query, date_filter_type=date_filter_type, start_date=start_date, end_date=end_date) }}" aria-label="Previous">
+                <span aria-hidden="true">&laquo;</span>
+            </a>
+        </li>
+        {% else %}
+        <li class="page-item disabled">
+            <span class="page-link">&laquo;</span>
+        </li>
+        {% endif %}
+
+        {# 페이지 번호들: 이 부분을 수정해야 합니다. #}
+        {% for p in pagination.iter_pages() %}
+            {% if p %}
+                {% if p == pagination.page %}
+                <li class="page-item active" aria-current="page"><span class="page-link">{{ p }}</span></li>
+                {% else %}
+                {# 'page=pagination.prev_num' 이 제거된 올바른 코드 #}
+                <li class="page-item"><a class="page-link" href="{{ url_for('iris.results', page=p, search=search_query, confirm=confirm_query, date_filter_type=date_filter_type, start_date=start_date, end_date=end_date) }}">{{ p }}</a></li>
+                {% endif %}
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+
+        {# '다음' 버튼: 이 부분은 이제 정확합니다. #}
+        {% if pagination.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="{{ url_for('iris.results', page=pagination.next_num, search=search_query, confirm=confirm_query, date_filter_type=date_filter_type, start_date=start_date, end_date=end_date) }}" aria-label="Next">
+                <span aria-hidden="true">&raquo;</span>
+            </a></li>
+        {% else %}
+        <li class="page-item disabled">
+            <span class="page-link">&raquo;</span></li>
+        {% endif %}
+    </ul>
+</nav>
+        {% else %}
+            <div class="alert alert-info" role="alert">
+                AI 추론 결과가 없습니다. <a href="{{ url_for('iris.iris_predict') }}" class="alert-link">지금 붓꽃 분류하기</a>
+            </div>
+        {% endif %}
+    </div>
+
+
+<style>
+/* 모바일 (기본값) */
+.user-create-btn {
+    width: 100%; /* 모바일에서 전체 폭 */
+}
+
+/* Medium (md) 이상 화면 (768px 이상) */
+@media (min-width: 768px) {
+    .user-create-btn {
+        width: auto; /* 데스크톱에서 내용에 맞춰 자동 크기 */
+    }
+}
+</style>
+{% endblock %}

@@ -1,0 +1,87 @@
+<!-- apps/iris/templates/iris/predict.html -->
+{%  extends  "iris_base.html"  %} 
+{% block title %}Iris 품종 예측{% endblock %}
+{% block iris_content %}
+{# <div class="container dt-auth-main"> #} {# dt-auth-main을 container와 함께 사용하여 중앙 정렬 및 너비 제한 #}
+    <div class="card">
+        <header class="card-header text-center py-2">IRIS 품종 예측</header> {# Bootstrapcard-header클래스추가#}
+        <section class="card-body py-3"> {# Bootstrap card-body 클래스 추가 #}
+            <form action="{{ url_for('iris.iris_predict', next=request.args.get('next')) }}" method="POST" novalidate="novalidate">
+                {{ form.csrf_token }} 
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label for="sepal_length" class="form-label">세팔 길이 (cm)</label>
+{#                        <input type="number" step="0.1" class="form-control" id="sepal_length" name="sepal_length" required value="0.0">  #}
+                        <input type="number" step="0.1" class="form-control" id="sepal_length" name="sepal_length" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="sepal_width" class="form-label">세팔 너비 (cm)</label>
+                        <input type="number" step="0.1" class="form-control" id="sepal_width" name="sepal_width" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="petal_length" class="form-label">페탈 길이 (cm)</label>
+                        <input type="number" step="0.1" class="form-control" id="petal_length" name="petal_length" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="petal_width" class="form-label">페탈 너비 (cm)</label>
+                        <input type="number" step="0.1" class="form-control" id="petal_width" name="petal_width" required>
+                    </div>
+                </div>
+
+                <div class="d-grid"> {# 버튼을 블록 레벨로 만들고 그리드 간격 추가 #}
+                    <button type="submit" class="btn btn-primary btn-lg">예측</button> {# 크고 파란색 버튼 #}
+                </div>
+            </form>
+        </section>
+        {% if result %}
+        <section class="card-footer bg-light"> {# 배경색을 light로 변경하여 경계 강조 #}
+            <div class="d-flex align-items-center justify-content-between mb-3"> {# 결과와 입력값 분리, 간격 유지 #}
+                <h6 class="text-primary mb-0">예측 결과:</h6> {# 결과 제목 강조 #}
+                <span class="badge bg-success fs-6 py-2 px-3"> {# 뱃지 크기 및 패딩 조절 #} {{ result }} </span>
+            </div>
+            {% if allow_confirm_save %} {# 이 조건문을 추가했습니다. #}
+            <form method="POST" action="{{ url_for('iris.save_iris_data') }}">
+                {{ form.csrf_token }} 
+                <input type="hidden" name="iris_result_id" value="{{ iris_result_id }}">
+                <input type="hidden" name="sepal_length" value="{{ sepal_length }}">
+                <input type="hidden" name="sepal_width" value="{{ sepal_width }}">
+                <input type="hidden" name="petal_length" value="{{ petal_length }}">
+                <input type="hidden" name="petal_width" value="{{ petal_width }}">
+                <input type="hidden" name="predicted_class" value="{{ result }}">
+                <div class="form-group d-flex align-items-center"> {# Flexbox를 사용하여 옆으로 배치 #}
+                    <select class="form-control" id="confirmed_class" name="confirmed_class" required>
+                        {% for class_name in TARGET_NAMES %}
+                        <option value="{{ class_name }}" {% if result == class_name %}selected{% endif %}>{{ class_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="d-grid gap-2"> {# 버튼을 블록 레벨로 만들고 그리드 간격 추가 #}
+                    <button type="submit" class="btn btn-primary btn-lg">확인저장</button> {# 크고 파란색 버튼 #}
+                </div>
+            </form>
+            {% else %}
+            <div class="alert alert-warning" role="alert">
+                이 값은 이미 추론된 결과입니다. 확인 저장할 수 없습니다.
+            </div>
+            {% endif %}
+
+            <p class="text-muted mb-2">입력된 꽃의 특성:</p> {# 설명 텍스트, 하단 마진 줄임 #}
+            <ul class="list-group list-group-flush"> {# 리스트 그룹으로 변경, 플러시하여 테두리 제거 #}
+                <li class="list-group-item d-flex justify-content-between align-items-center py-1">
+                    Sepal Length: <span class="fw-bold">{{ sepal_length }} cm</span> {# 값 강조 #}
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center py-1">
+                    Sepal Width: <span class="fw-bold">{{ sepal_width }} cm</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center py-1">
+                    Petal Length: <span class="fw-bold">{{ petal_length }} cm</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center py-1">
+                    Petal Width: <span class="fw-bold">{{ petal_width }} cm</span>
+                </li>
+            </ul>
+        </section>
+        {% endif %}
+    </div>
+{% endblock %}

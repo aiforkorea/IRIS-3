@@ -1,0 +1,48 @@
+{# apps/iris/templates/iris/pred_confirms.html #}
+{% extends 'base.html' %}
+{% block title %}예측 결과 확인{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    {% if unconfirmed_results %}
+    <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th scope="col">ID</th>
+                    <th scope="col">사용자 ID</th>
+                    <th scope="col">예측된 클래스</th>
+                    <th scope="col">꽃받침 길이 (sepal_length)</th>
+                    <th scope="col">꽃받침 너비 (sepal_width)</th>
+                    <th scope="col">꽃잎 길이 (petal_length)</th>
+                    <th scope="col">꽃잎 너비 (petal_width)</th>
+                    <th scope="col">수정 및 확인</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for result in unconfirmed_results %}
+                <tr>
+                    <td>{{ result.id }}</td>
+                    <td>{{ result.user_id }}</td>
+                    <td>{{ result.predicted_class }}</td>
+                    <td>{{ result.sepal_length }}</td>
+                    <td>{{ result.sepal_width }}</td>
+                    <td>{{ result.petal_length }}</td>
+                    <td>{{ result.petal_width }}</td>
+                    <td>
+                        <form action="{{ url_for('iris.update_confirm') }}" method="post" class="d-flex">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="id" value="{{ result.id }}">
+                            <input type="text" name="confirmed_class" value="{{ result.predicted_class }}" class="form-control me-2" aria-label="Confirmed Class">
+                            <button type="submit" class="btn btn-primary">확인</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-center text-muted">확인할 예측 결과가 없습니다.</p>
+    {% endif %}
+</div>
+{% endblock %}
