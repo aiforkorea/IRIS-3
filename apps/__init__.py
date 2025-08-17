@@ -58,11 +58,13 @@ def create_app():   # factory 함수
     from .auth import auth
     from .admin import admin
     from .mypage import mypage
+    from .iris import iris
 
     app.register_blueprint(main)
     app.register_blueprint(auth, url_prefix="/auth")
     app.register_blueprint(admin, url_prefix="/admin")
     app.register_blueprint(mypage, url_prefix="/mypage")
+    app.register_blueprint(iris, url_prefix="/iris")
 
     # db 테이블 생성 및 관리자 초기계정 생성
     with app.app_context():
