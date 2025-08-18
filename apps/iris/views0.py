@@ -176,59 +176,45 @@ def iris_predict():
 @iris.route('/save_iris_data', methods=['POST'])
 @login_required
 def save_iris_data():
-    if request.method != 'POST':
-        flash('잘못된 접근입니다.', 'danger')
-        return redirect(url_for('iris.iris_predict'))
+    if request.method == 'POST':
+        # 폼 데이터 가져오기
+        iris_result_id = request.form.get('iris_result_id')
+        confirmed_class = request.form.get('confirmed_class')
 
-    result_id = request.form.get('iris_result_id')
-    confirmed_class = request.form.get('confirmed_class')
+        # created_id가 없으면 오류 처리
+        if not iris_result_id:
+            flash('유효한 데이터 ID가 없습니다.', 'danger')
+            return redirect(url_for('iris.iris_predict'))
 
-    if not result_id or confirmed_class not in ['setosa', 'versicolor', 'virginica']:
-        flash('유효한 데이터 ID 또는 품종이 아닙니다.', 'danger')
-        return redirect(url_for('iris.iris_predict'))
+        try:
+            # form으로 접수한 iris_resutlt_id를 사용하여 IrisResult 레코드 조회
+            # first_or_404()를 사용하면 레코드가 없을 경우 404 에러를 반환
+            iris_result = IrisResult.query.filter_by(id=iris_result_id).first_or_404()
+            
+            # 레코드 업데이트
+            iris_result.confirmed_class = confirmed_class
+            iris_result.confirm = True
+            iris_result.confirmed_at = datetime.now()
 
-    try:
-        # 1. 폼 데이터로 받은 result_id를 사용하여 IrisResult 레코드를 조회합니다.
-        result = IrisResult.query.filter_by(id=result_id).first_or_404()
+            # 변경사항 커밋 + 로그 추가
+            db.session.commit()
+            # 데이터 업데이트가 성공했음을 확인하는 print 문 추가
+            print(f"IrisResult with ID {iris_result_id} has been successfully updated.")
+            print(f"Updated values: confirmed_class='{iris_result.confirmed_class}', confirm={iris_result.confirm}")
 
-        # 2. 현재 사용자의 권한을 확인합니다.
-        if result.user_id != current_user.id:
-            abort(403)
+            # 성공 메시지  
+            flash('데이터가 성공적으로 저장되었습니다.', 'success')
+            return redirect(url_for('iris.iris_predict'))
 
-        # 3. 추론 결과를 업데이트합니다.
-        result.confirmed_class = confirmed_class
-        result.confirm = True
-        result.confirmed_at = datetime.now()
+        except Exception as e:
+            db.session.rollback() # 오류 발생 시 롤백
+            flash(f'데이터 저장 중 오류가 발생했습니다: {e}', 'danger')
+            return redirect(url_for('iris.iris_predict'))
+            
+    # POST 요청이 아닌 경우
+    flash('잘못된 접근입니다.', 'danger')
+    return redirect(url_for('iris.iris_predict'))
 
-        # 4. 가장 최근의 사용 로그를 조회합니다.
-        recent_log = UsageLog.query.filter_by(prediction_result_id=result.id).order_by(desc(UsageLog.timestamp)).first()
-        
-        # 5. 새 사용 로그 객체를 생성하고, 기존 로그가 있는 경우 해당 정보를 사용합니다.
-        new_usage_log = UsageLog(
-            user_id=current_user.id,
-            service_id=recent_log.service_id if recent_log else None,
-            api_key_id=recent_log.api_key_id if recent_log else None,
-            endpoint=request.path,
-            usage_type=UsageType.WEB_UI,
-            log_status='추론확인',
-            inference_timestamp=recent_log.inference_timestamp if recent_log else None,
-            remote_addr=request.remote_addr,
-            response_status_code=200,
-            prediction_result_id=result.id
-        )
-        db.session.add(new_usage_log)
-
-        # 6. 모든 변경사항을 한 번의 트랜잭션으로 커밋합니다.
-        db.session.commit()
-
-        flash('추론 확인 및 관련 로그가 성공적으로 처리되었습니다.', 'success')
-        return redirect(url_for('iris.iris_predict'))
-
-    except Exception as e:
-        db.session.rollback()
-        print(f'결과 입력 중 오류가 발생했습니다: {e}')
-        flash(f'결과 입력 중 오류가 발생했습니다: {e}', 'danger')
-        return redirect(url_for('iris.iris_predict'))
 """
 @iris.route('/results')
 @login_required
