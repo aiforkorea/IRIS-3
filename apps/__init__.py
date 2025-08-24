@@ -57,18 +57,20 @@ def create_app():   # factory 함수
     from .main import main
     from .auth import auth
     from .admin import admin
+    from .match import match
     from .mypage import mypage
     from .iris import iris
 
     app.register_blueprint(main)
     app.register_blueprint(auth, url_prefix="/auth")
     app.register_blueprint(admin, url_prefix="/admin")
+    app.register_blueprint(match, url_prefix="/match")
     app.register_blueprint(mypage, url_prefix="/mypage")
     app.register_blueprint(iris, url_prefix="/iris")
 
     # db 테이블 생성 및 관리자 초기계정 생성
     with app.app_context():
-        #db.drop_all()         # 운영시에는 커멘트 처리 필요
+        db.drop_all()         # 운영시에는 커멘트 처리 필요
         db.create_all()       # 테이블 생성
         # 최초 관리자 계정 생성
         admin_username = app.config.get('ADMIN_USERNAME')

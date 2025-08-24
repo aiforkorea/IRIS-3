@@ -1,0 +1,219 @@
+{# apps/match/templates/math/matches.html #}
+<!doctype html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>관리자 매칭 관리</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .alert { padding: 10px; margin-bottom: 1em; border-radius: 5px; }
+        .alert-success { background-color: #d4edda; color: #155724; }
+        .alert-danger { background-color: #f8d7da; color: #721c24; }
+        .pagination { display: inline-block; margin-top: 1em; }
+        .pagination a { color: black; float: left; padding: 8px 16px; text-decoration: none; border: 1px solid #ddd; }
+        .pagination a.active { background-color: #4CAF50; color: white; border: 1px solid #4CAF50; }
+        .pagination a:hover:not(.active) { background-color: #ddd; }
+        .modal {
+            display: none; position: fixed; z-index: 1; left: 0; top: 0; width: 100%; height: 100%;
+            overflow: auto; background-color: rgba(0,0,0,0.4); padding-top: 60px;
+        }
+        .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border: 1px solid #888; width: 80%; }
+        .close-btn { color: #aaa; float: right; font-size: 28px; font-weight: bold; }
+        .close-btn:hover, .close-btn:focus { color: black; text-decoration: none; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>관리자 매칭 관리</h1>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="alerts">
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <hr>
+    
+    <form method="GET" action="{{ url_for('match.manage_matches') }}">
+        <h3>검색 필터</h3>
+        <label>사용자 ID/이메일: <input type="text" name="user_id_keyword" value="{{ user_id_keyword }}"></label>
+        <label>전문가 ID/이메일: <input type="text" name="expert_id_keyword" value="{{ expert_id_keyword }}"></label>
+        <label>상태: 
+            <select name="status_filter">
+                <option value="all" {% if status_filter == 'all' %}selected{% endif %}>전체</option>
+                <option value="unassigned" {% if status_filter == 'unassigned' %}selected{% endif %}>매칭 전</option>
+                <option value="in_progress" {% if status_filter == 'in_progress' %}selected{% endif %}>매칭 중</option>
+                <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>매칭 완료</option>
+                <option value="cancelled" {% if status_filter == 'cancelled' %}selected{% endif %}>매칭 취소</option>
+            </select>
+        </label>
+        <label>시작일: <input type="date" name="start_date" value="{{ start_date }}"></label>
+        <label>종료일: <input type="date" name="end_date" value="{{ end_date }}"></label>
+        <button type="submit">검색</button>
+    </form>
+
+    <hr>
+    
+    <h2>매칭 목록</h2>
+    <div>
+        <button type="button" id="open-assign-modal">전문가 매칭</button>
+        <button type="button" id="batch-complete-btn">매칭 완료</button>
+        <button type="button" id="batch-cancel-btn">매칭 취소</button>
+    </div>
+    
+    <form id="batch-form" method="POST" action="">
+        {{ csrf_token() }}
+        <table border="1">
+            <thead>
+                <tr>
+                    <th><input type="checkbox" id="check-all"></th>
+                    <th>매칭 ID</th>
+                    <th>사용자</th>
+                    <th>전문가</th>
+                    <th>상태</th>
+                    <th>생성일</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for match in matches.items %}
+                <tr>
+                    <td><input type="checkbox" name="match_ids" value="{{ match.id }}"></td>
+                    <td>{{ match.id }}</td>
+                    <td>{{ match.user.email }}</td>
+                    <td>{{ match.expert.email if match.expert else '미정' }}</td>
+                    <td>{{ match.status.value }}</td>
+                    <td>{{ match.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </form>
+
+    <div class="pagination">
+        {% if matches.has_prev %}
+        <a href="{{ url_for('match.manage_matches', page=matches.prev_num, user_id_keyword=user_id_keyword, expert_id_keyword=expert_id_keyword, status_filter=status_filter, start_date=start_date, end_date=end_date) }}">이전</a>
+        {% endif %}
+        {% for page_num in matches.iter_pages(left_edge=1, right_edge=1, left_current=1, right_current=2) %}
+            {% if page_num %}
+                {% if matches.page == page_num %}
+                <a class="active" href="#">{{ page_num }}</a>
+                {% else %}
+                <a href="{{ url_for('match.manage_matches', page=page_num, user_id_keyword=user_id_keyword, expert_id_keyword=expert_id_keyword, status_filter=status_filter, start_date=start_date, end_date=end_date) }}">{{ page_num }}</a>
+                {% endif %}
+            {% else %}
+                ...
+            {% endif %}
+        {% endfor %}
+        {% if matches.has_next %}
+        <a href="{{ url_for('match.manage_matches', page=matches.next_num, user_id_keyword=user_id_keyword, expert_id_keyword=expert_id_keyword, status_filter=status_filter, start_date=start_date, end_date=end_date) }}">다음</a>
+        {% endif %}
+    </div>
+
+    <div id="expert-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <h2>전문가 선택</h2>
+            <p>선택된 매칭들에 전문가를 할당합니다.</p>
+            <form id="assign-expert-form" method="POST" action="{{ url_for('match.batch_assign_expert') }}">
+                {{ csrf_token() }}
+                <input type="hidden" name="match_ids" id="modal-match-ids">
+                <label>전문가 선택:</label>
+                <select name="expert_id" required>
+                    <option value="">선택하세요</option>
+                    {% for expert in experts %}
+                    <option value="{{ expert.id }}">{{ expert.email }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit">확인</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const batchForm = document.getElementById('batch-form');
+            const checkAll = document.getElementById('check-all');
+            const checkboxes = document.querySelectorAll('input[name="match_ids"]');
+            
+            // 일괄 매칭 버튼
+            const openAssignModalBtn = document.getElementById('open-assign-modal');
+            const expertModal = document.getElementById('expert-modal');
+            const closeBtn = document.querySelector('.close-btn');
+            const modalMatchIdsInput = document.getElementById('modal-match-ids');
+
+            // 매칭 완료/취소 버튼
+            const batchCompleteBtn = document.getElementById('batch-complete-btn');
+            const batchCancelBtn = document.getElementById('batch-cancel-btn');
+
+            // 전체 선택/해제
+            checkAll.addEventListener('change', () => {
+                checkboxes.forEach(cb => cb.checked = checkAll.checked);
+            });
+
+            // 전문가 매칭 팝업 열기
+            openAssignModalBtn.addEventListener('click', () => {
+                const checkedIds = Array.from(checkboxes)
+                                        .filter(cb => cb.checked)
+                                        .map(cb => cb.value);
+                
+                if (checkedIds.length === 0) {
+                    alert('하나 이상의 매칭을 선택해야 합니다.');
+                    return;
+                }
+                
+                modalMatchIdsInput.value = checkedIds.join(',');
+                expertModal.style.display = 'block';
+            });
+
+            // 팝업 닫기
+            closeBtn.addEventListener('click', () => expertModal.style.display = 'none');
+            window.addEventListener('click', (event) => {
+                if (event.target === expertModal) {
+                    expertModal.style.display = 'none';
+                }
+            });
+
+            // 일괄 완료/취소 처리
+            batchCompleteBtn.addEventListener('click', () => {
+                const checkedIds = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+                if (checkedIds.length === 0) {
+                    alert('하나 이상의 매칭을 선택해야 합니다.');
+                    return;
+                }
+                if (confirm('선택된 매칭을 완료 처리하시겠습니까?')) {
+                    batchForm.action = '{{ url_for("match.batch_end_match") }}';
+                    const hiddenActionInput = document.createElement('input');
+                    hiddenActionInput.type = 'hidden';
+                    hiddenActionInput.name = 'action';
+                    hiddenActionInput.value = 'complete';
+                    batchForm.appendChild(hiddenActionInput);
+                    batchForm.submit();
+                }
+            });
+
+            batchCancelBtn.addEventListener('click', () => {
+                const checkedIds = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+                if (checkedIds.length === 0) {
+                    alert('하나 이상의 매칭을 선택해야 합니다.');
+                    return;
+                }
+                if (confirm('선택된 매칭을 취소 처리하시겠습니까?')) {
+                    batchForm.action = '{{ url_for("match.batch_end_match") }}';
+                    const hiddenActionInput = document.createElement('input');
+                    hiddenActionInput.type = 'hidden';
+                    hiddenActionInput.name = 'action';
+                    hiddenActionInput.value = 'cancel';
+                    batchForm.appendChild(hiddenActionInput);
+                    batchForm.submit();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

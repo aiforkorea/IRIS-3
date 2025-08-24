@@ -39,3 +39,6 @@ class CreateUserForm(FlaskForm):
     def validate_email(self, email):
         if User.query.filter_by(email=email.data).first():
             raise ValidationError('이미 존재하는 이메일입니다.')
+        
+
+        

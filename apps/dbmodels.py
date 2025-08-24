@@ -43,6 +43,13 @@ class UsageType(enum.Enum):
         """
         return value in cls._value2member_map_  # Enum의 모든 값 리스트를 검색
 
+class MatchStatus(enum.Enum):
+    UNASSIGNED = "unassigned"  # 매칭 전
+    PENDING = "pending"        # 매칭 대기 중
+    IN_PROGRESS = "in_progress" # 매칭 진행 중
+    COMPLETED = "completed"    # 매칭 완료
+    CANCELLED = "cancelled"    # 매칭 취소
+
 class User(db.Model, UserMixin):
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
@@ -57,6 +64,9 @@ class User(db.Model, UserMixin):
     monthly_limit = db.Column(db.Integer, default=5000)
     created_at = db.Column(db.DateTime, default=func.now())
     updated_at = db.Column(db.DateTime, default=func.now(), onupdate=func.now())
+    # [새로 추가된 필드]
+    match_status = db.Column(db.Enum(MatchStatus), nullable=False, default=MatchStatus.UNASSIGNED) # 사용자의 매칭 상태
+
     # [수정] backref 대신 back_populates를 사용하여 양방향 관계를 명시적으로 설정
     action_logs = db.relationship('Log', foreign_keys='Log.user_id', back_populates='actor', lazy='dynamic')
     targeted_logs = db.relationship('Log', foreign_keys='Log.target_user_id', back_populates='target_user', lazy='dynamic')
@@ -65,6 +75,13 @@ class User(db.Model, UserMixin):
     usage_logs = db.relationship("UsageLog", back_populates="user", lazy=True, cascade="all, delete-orphan")
     subscriptions=db.relationship("Subscription", back_populates="user", lazy=True, cascade="all, delete-orphan")
     prediction_results = db.relationship("PredictionResult", back_populates="user", lazy=True, cascade="all, delete-orphan")
+    # 관계 추가
+    matches_as_user = db.relationship('Match', foreign_keys='Match.user_id', back_populates='user', lazy='dynamic')
+    matches_as_expert = db.relationship('Match', foreign_keys='Match.expert_id', back_populates='expert', lazy='dynamic')
+
+    admin_logs = db.relationship('MatchLog', foreign_keys='MatchLog.admin_id', back_populates='admin', lazy=True)
+    user_match_logs = db.relationship('MatchLog', foreign_keys='MatchLog.user_id', back_populates='user', lazy=True)
+    expert_match_logs = db.relationship('MatchLog', foreign_keys='MatchLog.expert_id', back_populates='expert', lazy=True)
 
     @property
     def password(self):
@@ -110,6 +127,15 @@ class User(db.Model, UserMixin):
     def __repr__(self):
         return f'<User {self.username}>'
 
+class ExpertProfile(db.Model):
+    __tablename__ = "expert_profiles"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), unique=True)
+    bio = db.Column(db.Text) # 자기소개
+    expertise_field = db.Column(db.String(100))
+    career_years = db.Column(db.Integer)
+    # 관계
+    user = db.relationship('User', backref=db.backref('expert_profile', uselist=False))
 
 class Log(db.Model):
     __tablename__ = "logs"
@@ -133,6 +159,51 @@ class Log(db.Model):
 
     def __repr__(self) -> str:
         return f"<Log(user_id={self.user_id}, target_user_id={self.target_user_id}, log_title='{self.log_title}')>"
+
+class Match(db.Model):
+    __tablename__ = "matches"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    expert_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    status = db.Column(db.Enum(MatchStatus), nullable=False, default=MatchStatus.IN_PROGRESS)
+    created_at = db.Column(db.DateTime, default=func.now())
+    closed_at = db.Column(db.DateTime, nullable=True)
+    user_rating = db.Column(db.Integer, nullable=True)
+    expert_notes = db.Column(db.Text, nullable=True)
+
+    # 관계 설정
+    user = db.relationship('User', foreign_keys=[user_id], back_populates='matches_as_user')
+    expert = db.relationship('User', foreign_keys=[expert_id], back_populates='matches_as_expert')
+    # [추가] back_populates 추가
+    match_logs = db.relationship('MatchLog', back_populates='match', lazy=True)    
+    def __repr__(self):
+        return f'<Match {self.user_id} - {self.expert_id}>'
+
+class MatchLog(db.Model):
+    __tablename__ = 'match_logs'
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=func.now())
+    admin_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # 행위자(admin)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # 일반 사용자
+    expert_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # 전문가
+    match_id = db.Column(db.Integer, db.ForeignKey('matches.id'))  # 매칭 대상
+    
+    # [수정] String 대신 Enum 사용
+    match_status = db.Column(db.Enum(MatchStatus), nullable=False)
+    
+    action_summary = db.Column(db.String(255))
+    details = db.Column(db.Text, nullable=True)
+    remote_addr = db.Column(db.String(45), nullable=True)
+    response_code = db.Column(db.Integer, nullable=True)
+    
+    # [추가] 관계 설정 (양방향 관계로 데이터 접근성 향상)
+    admin = db.relationship('User', foreign_keys=[admin_id], back_populates='admin_logs', lazy=True)
+    user = db.relationship('User', foreign_keys=[user_id], back_populates='user_match_logs', lazy=True)
+    expert = db.relationship('User', foreign_keys=[expert_id], back_populates='expert_match_logs', lazy=True)
+    match = db.relationship('Match', foreign_keys=[match_id], back_populates='match_logs', lazy=True)
+
+    def __repr__(self):
+        return f'<MatchLog {self.id}>'
 
 class Service(db.Model):
     __tablename__ = "services"
@@ -248,6 +319,4 @@ class PredictionResult(db.Model):
     service = db.relationship('Service', back_populates='prediction_results')
     def __repr__(self) -> str:
         return f"<PredictionResult(user_id={self.user_id}, service_id={self.service_id}, predicted_class='{self.predicted_class}')>"
-
-
 
