@@ -140,80 +140,101 @@ def create_new_match():
     return redirect(url_for('match.match_manager'))
 
 
+# 수정된 batch_update_matches 함수
 @match.route('/batch_update', methods=['POST'])
 @login_required
 @admin_required
 def batch_update_matches():
-
-    # 전문가 목록 가져오기 및 선택지 준비
+    # 전문가 목록 받아오기 및 choices 준비
     experts = User.query.filter_by(user_type=UserType.EXPERT, is_active=True, is_deleted=False).order_by(User.username).all()
     expert_choices = [(expert.id, expert.username) for expert in experts]
     if not expert_choices:
         expert_choices = [(0, '--- 선택 가능한 전문가가 없습니다 ---')]
-    choices = [(0, '--- 전문가 선택 ---')] + expert_choices
+    batch_expert_choices = [(0, '--- 전문가 선택 ---')] + expert_choices
 
-    match_search_form = MatchSearchForm()
+    # 폼 인스턴스를 request.form으로 생성
+    match_search_form = MatchSearchForm(request.form)
 
-    # 폼 생성 후 바로 choices 할당
-    match_search_form.batch_expert_id.choices = choices
+    # 반드시 동적으로 status와 기타 SelectField의 choices 할당!
+    match_search_form.status.choices = [('all', '모두')] + [(s.name, s.value) for s in MatchStatus]
+    match_search_form.batch_expert_id.choices = batch_expert_choices
 
-    print("2 batch_expert_id choices:", match_search_form.batch_expert_id.choices)
+    # 폼에서 status가 빠져 있으면 기본값 할당   (핵심!)
+    if 'status' not in request.form:
+        match_search_form.status.data = 'all'
+        
+    # 매칭 선택(match_ids) 필드 값을 기반으로 choices 동적 세팅
+    match_ids_str = request.form.getlist('match_ids')
+    match_ids = [int(id_str) for id_str in match_ids_str if id_str.isdigit()]
+    match_search_form.match_ids.choices = [(int(id), id) for id in match_ids_str]
 
-    if match_search_form.validate_on_submit():
-        match_ids = match_search_form.match_ids.data
+    # ------ 일괄 할당 처리 ------
+    if 'batch_assign_submit' in request.form:
+        if not match_ids:
+            flash("매칭을 하나 이상 선택해야 합니다.", "danger")
+            return redirect(url_for('match.match_manager'))
+
+        if not match_search_form.validate_on_submit():
+            # 폼 에러 메시지 한글로 치환
+            for field, errors in match_search_form.errors.items():
+                for error in errors:
+                    # 영어 오류 메시지 한글로 변환
+                    if error == "Not a valid choice.":
+                        error = "유효하지 않은 선택입니다."
+                    flash(f"{match_search_form[field].label.text}: {error}", "danger")
+            return redirect(url_for('match.match_manager'))
+
+        try:
+            new_expert_id = match_search_form.batch_expert_id.data
+            updated_count = 0
+            for match_id in match_ids:
+                match_to_update = Match.query.get(match_id)
+                if match_to_update and match_to_update.status == MatchStatus.IN_PROGRESS:
+                    original_expert_id = match_to_update.expert_id
+                    match_to_update.expert_id = new_expert_id
+
+                    match_log = MatchLog(
+                        admin_id=current_user.id,
+                        match_id=match_id,
+                        match_status=MatchStatus.IN_PROGRESS,
+                        action_summary=f"매칭 전문가 변경: 기존({original_expert_id}) -> 신규({new_expert_id})"
+                    )
+                    db.session.add(match_log)
+                    updated_count += 1
+            db.session.commit()
+            flash(f"총 {updated_count}건의 매칭에 전문가를 재할당했습니다.", "success")
+        except Exception as e:
+            db.session.rollback()
+            flash(f"작업 처리 중 오류가 발생했습니다: {str(e)}", "danger")
+
+    # ------ 일괄 취소 처리 ------
+    elif 'batch_cancel_submit' in request.form:
         if not match_ids:
             flash("매칭을 하나 이상 선택해야 합니다.", "danger")
             return redirect(url_for('match.match_manager'))
 
         try:
-            if 'batch_assign_submit' in request.form and match_search_form.batch_expert_id.data:
-                new_expert_id = match_search_form.batch_expert_id.data
-                updated_count = 0
-                for match_id in match_ids:
-                    match_to_update = Match.query.get(match_id)
-                    if match_to_update and match_to_update.status == MatchStatus.IN_PROGRESS:
-                        original_expert_id = match_to_update.expert_id
-                        match_to_update.expert_id = new_expert_id
-                        
-                        # MatchLog 기록
-                        match_log = MatchLog(
-                            admin_id=current_user.id,
-                            match_id=match_id,
-                            match_status=MatchStatus.IN_PROGRESS,
-                            action_summary=f"매칭 전문가 변경: 기존({original_expert_id}) -> 신규({new_expert_id})"
-                        )
-                        db.session.add(match_log)
-                        updated_count += 1
-                db.session.commit()
-                flash(f"총 {updated_count}건의 매칭에 전문가를 재할당했습니다.", "success")
-            
-            elif 'batch_cancel_submit' in request.form:
-                cancelled_count = 0
-                for match_id in match_ids:
-                    match_to_cancel = Match.query.get(match_id)
-                    if match_to_cancel and match_to_cancel.status != MatchStatus.CANCELLED:
-                        match_to_cancel.status = MatchStatus.CANCELLED
-                        match_to_cancel.closed_at = datetime.datetime.now()
-                        
-                        # 사용자 상태 원복
-                        user = User.query.get(match_to_cancel.user_id)
-                        if user:
-                            user.match_status = MatchStatus.UNASSIGNED
-                        
-                        # MatchLog 기록
-                        match_log = MatchLog(
-                            admin_id=current_user.id,
-                            match_id=match_id,
-                            match_status=MatchStatus.CANCELLED,
-                            action_summary=f"매칭 취소 처리: 매칭 ID {match_id}"
-                        )
-                        db.session.add(match_log)
-                        cancelled_count += 1
-                db.session.commit()
-                flash(f"총 {cancelled_count}건의 매칭이 취소되었습니다.", "success")
-                
+            cancelled_count = 0
+            for match_id in match_ids:
+                match_to_cancel = Match.query.get(match_id)
+                if match_to_cancel and match_to_cancel.status != MatchStatus.CANCELLED:
+                    match_to_cancel.status = MatchStatus.CANCELLED
+                    match_to_cancel.closed_at = datetime.datetime.now()
+                    user = User.query.get(match_to_cancel.user_id)
+                    if user:
+                        user.match_status = MatchStatus.UNASSIGNED
+                    match_log = MatchLog(
+                        admin_id=current_user.id,
+                        match_id=match_id,
+                        match_status=MatchStatus.CANCELLED,
+                        action_summary=f"매칭 취소 처리: 매칭 ID {match_id}"
+                    )
+                    db.session.add(match_log)
+                    cancelled_count += 1
+            db.session.commit()
+            flash(f"총 {cancelled_count}건의 매칭이 취소되었습니다.", "success")
         except Exception as e:
             db.session.rollback()
             flash(f"작업 처리 중 오류가 발생했습니다: {str(e)}", "danger")
-            
+
     return redirect(url_for('match.match_manager'))
