@@ -3,7 +3,6 @@ import datetime
 from flask import render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from sqlalchemy.sql import func
-from sqlalchemy.orm import aliased  # Import aliased function
 
 # apps.extensions에서 db를 가져옵니다.
 from apps.extensions import db
@@ -18,82 +17,68 @@ from . import match  # Blueprint 정의
 @login_required
 @admin_required
 def match_manager():
+    # 매칭보내기 
+    unassigned_matches = User.query.filter_by(match_status='UNASSIGNED',user_type='USER').order_by(User.created_at.desc()).all()
+    completed_matches = Match.query.filter_by(status='IN_PROGRESS').order_by(Match.created_at.desc()).all() # 추후 COMPLETED로 교체
+
+    #print(unassigned_matches)
+    #print(completed_matches)
     new_match_form = NewMatchForm()
     match_search_form = MatchSearchForm()
-    
+
     # 전문가 목록을 폼에 채우기
     experts = User.query.filter_by(user_type=UserType.EXPERT, is_active=True, is_deleted=False).order_by(User.username).all()
     expert_choices = [(expert.id, expert.username) for expert in experts]
-    
+
     if not expert_choices:
         expert_choices = [(0, '--- 선택 가능한 전문가가 없습니다 ---')]
     
     expert_choices.insert(0, (0, '--- 전문가 선택 ---'))
     new_match_form.expert_id.choices = expert_choices
     match_search_form.batch_expert_id.choices = expert_choices
-    
-    # '매칭 관리' 탭에서 사용할 전문가 드롭다운 목록
-    match_search_form.expert_id.choices = [(0, '전체 전문가')] + [(expert.id, expert.username) for expert in experts]
+    match_search_form.expert_id.choices = expert_choices
 
-    # '신규 매칭' 탭 로직 (검색)
-    new_match_query = User.query.filter(User.user_type == UserType.USER, User.match_status == MatchStatus.UNASSIGNED)
-    if request.method == 'POST' and 'search_submit' in request.form:
-        if new_match_form.validate_on_submit():
-            email_query = new_match_form.email.data
-            start_date_query = new_match_form.start_date.data
-            end_date_query = new_match_form.end_date.data
+    # '신규 매칭' 탭 로직
+    query = User.query.filter(User.user_type == UserType.USER, User.match_status == MatchStatus.UNASSIGNED)
+    if request.method == 'POST' and 'new_match_search_submit' in request.form:
+        email_query = new_match_form.email.data
+        start_date_query = new_match_form.start_date.data
+        end_date_query = new_match_form.end_date.data
 
-            if email_query:
-                new_match_query = new_match_query.filter(User.email.ilike(f'%{email_query}%'))
-            if start_date_query:
-                new_match_query = new_match_query.filter(User.created_at >= start_date_query)
-            if end_date_query:
-                new_match_query = new_match_query.filter(User.created_at <= end_date_query + datetime.timedelta(days=1))
-    
-    users_to_match = new_match_query.order_by(User.created_at.desc()).all()
+        if email_query:
+            query = query.filter(User.email.ilike(f'%{email_query}%'))
+        if start_date_query:
+            query = query.filter(User.created_at >= start_date_query)
+        if end_date_query:
+            query = query.filter(User.created_at <= end_date_query + datetime.timedelta(days=1))
 
-    # '매칭 관리' 탭 로직 (검색 및 페이지네이션)
+    users_to_match = query.order_by(User.created_at.desc()).all()
+    #print(users_to_match)
+
+    # '매칭 관리' 탭 로직
     page = request.args.get('page', 1, type=int)
-    
-    # SQLAlchemy의 aliased 함수를 사용하여 User 테이블에 대한 별칭(alias) 생성
-    expert_alias = aliased(User)
-    
-    # 두 번째 outerjoin에 aliased 객체 사용
-    matches_query = db.session.query(Match).join(User, Match.user_id == User.id).outerjoin(expert_alias, Match.expert_id == expert_alias.id)
-    print(matches_query)    
-    # filtered_args 딕셔너리 초기화
-    filtered_args = {}
+    matches_query = Match.query.filter(Match.status == MatchStatus.IN_PROGRESS).order_by(Match.created_at.desc())
 
-    # GET 요청의 URL 파라미터로 검색 조건 반영
-    user_id_query = request.args.get('user_id', type=int)
-    expert_id_query = request.args.get('expert_id', type=int)
-    status_query = request.args.get('status', 'all', type=str)
-    start_date_query = request.args.get('start_date', type=datetime.date.fromisoformat if request.args.get('start_date') else None)
-    end_date_query = request.args.get('end_date', type=datetime.date.fromisoformat if request.args.get('end_date') else None)
-    
-    # 필터 적용
-    if user_id_query:
-        matches_query = matches_query.filter(Match.user_id == user_id_query)
-        filtered_args['user_id'] = user_id_query
-    if expert_id_query and expert_id_query != 0:
-        matches_query = matches_query.filter(Match.expert_id == expert_id_query)
-        filtered_args['expert_id'] = expert_id_query
-    if status_query and status_query != 'all':
-        matches_query = matches_query.filter(Match.status == MatchStatus(status_query))
-        filtered_args['status'] = status_query
-    if start_date_query:
-        matches_query = matches_query.filter(Match.created_at >= start_date_query)
-        filtered_args['start_date'] = start_date_query.isoformat()
-    if end_date_query:
-        matches_query = matches_query.filter(Match.created_at <= end_date_query + datetime.timedelta(days=1))
-        filtered_args['end_date'] = end_date_query.isoformat()
+    if request.method == 'POST' and 'match_history_search_submit' in request.form:
+        user_id_query = match_search_form.user_id.data
+        expert_id_query = match_search_form.expert_id.data
+        status_query = match_search_form.status.data
+        start_date_query = match_search_form.start_date.data
+        end_date_query = match_search_form.end_date.data
 
-    pagination = matches_query.order_by(Match.created_at.desc()).paginate(page=page, per_page=10, error_out=False)
+        if user_id_query:
+            matches_query = matches_query.filter(Match.user_id == user_id_query)
+        if expert_id_query:
+            matches_query = matches_query.filter(Match.expert_id == expert_id_query)
+        if status_query != 'all':
+            matches_query = matches_query.filter(Match.status == MatchStatus(status_query))
+        if start_date_query:
+            matches_query = matches_query.filter(Match.created_at >= start_date_query)
+        if end_date_query:
+            matches_query = matches_query.filter(Match.created_at <= end_date_query + datetime.timedelta(days=1))
+
+    pagination = matches_query.paginate(page=page, per_page=10, error_out=False)
     matches_history = pagination.items
-    print(matches_history)
-    # 탭별 항목 수 계산
-    unassigned_matches_count = User.query.filter_by(match_status=MatchStatus.UNASSIGNED, user_type=UserType.USER).count()
-    completed_matches_count = Match.query.filter(Match.status.in_([MatchStatus.IN_PROGRESS, MatchStatus.COMPLETED])).count()
 
     return render_template(
         'match/match_manager.html',
@@ -102,9 +87,8 @@ def match_manager():
         users_to_match=users_to_match,
         matches_history=matches_history,
         pagination=pagination,
-        unassigned_matches_count=unassigned_matches_count,
-        completed_matches_count=completed_matches_count,
-        filtered_args=filtered_args,
+        unassigned_matches=unassigned_matches,
+        completed_matches=completed_matches,
     )
 
 @match.route('/new', methods=['POST'])
