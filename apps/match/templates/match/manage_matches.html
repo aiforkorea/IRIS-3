@@ -1,0 +1,205 @@
+{# apps/match/templates/math/manage_matches.html #}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Match Management</title>
+    <style>
+        .pagination a { padding: 5px; }
+        .tab-content { border: 1px solid #ccc; padding: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Match Management</h1>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <ul class=flashes>
+        {% for category, message in messages %}
+            <li class="{{ category }}">{{ message }}</li>
+        {% endfor %}
+        </ul>
+    {% endif %}
+    {% endwith %}
+
+    <div>
+        <button onclick="showTab('existing-matches')">기존 매칭 관리</button>
+        <button onclick="showTab('new-matches')">새로운 매칭 생성</button>
+    </div>
+    
+    <div id="existing-matches" class="tab-content">
+        <h2>기존 매칭 관리</h2>
+        
+        <form method="POST" action="{{ url_for('match.manage_matches') }}">
+            {{ search_form.hidden_tag() }}
+            {{ search_form.user_id.label }} {{ search_form.user_id(size=10) }}
+            {{ search_form.expert_id.label }} {{ search_form.expert_id(size=10) }}
+            {{ search_form.status.label }} {{ search_form.status() }}
+            {{ search_form.start_date.label }} {{ search_form.start_date() }}
+            {{ search_form.end_date.label }} {{ search_form.end_date() }}
+            {{ search_form.submit() }}
+        </form>
+
+        <h3>CSV Actions</h3>
+        <form method="POST" action="{{ url_for('match.manage_matches') }}" enctype="multipart/form-data">
+            {{ csv_form.hidden_tag() }}
+            {{ csv_form.csv_file.label }} {{ csv_form.csv_file() }}
+            {{ csv_form.submit() }}
+        </form>
+        <a href="{{ url_for('match.download_csv') }}">Download all matches as CSV</a>
+        
+        <form method="POST" action="{{ url_for('match.bulk_assign') }}" id="bulk-assign-form">
+            {{ bulk_form.hidden_tag() }}
+            <h3>Bulk Actions</h3>
+            <p>
+                Assign selected to Expert ID: {{ bulk_form.expert_id(size=10) }}
+                {{ bulk_form.submit(formaction=url_for('match.bulk_assign')) }}
+                <button type="submit" formaction="{{ url_for('match.bulk_unassign') }}">Unassign Selected</button>
+            </p>
+        
+            <table border="1">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="select-all"></th>
+                        <th>ID</th>
+                        <th>User ID</th>
+                        <th>Expert ID</th>
+                        <th>Status</th>
+                        <th>Created At</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for match in matches.items %}
+                    <tr>
+                        <td><input type="checkbox" name="selected_matches" value="{{ match.id }}"></td>
+                        <td>{{ match.id }}</td>
+                        <td>{{ match.user_id }}</td>
+                        <td>{{ match.expert_id }}</td>
+                        <td>{{ match.status.value }}</td>
+                        <td>{{ match.created_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            
+        </form>
+
+        <div class="pagination">
+            {% for page_num in matches.iter_pages() %}
+                {% if page_num %}
+                    <a href="{{ url_for('match.manage_matches', page=page_num, user_id=search_form.user_id.data, expert_id=search_form.expert_id.data, status=search_form.status.data) }}">{{ page_num }}</a>
+                {% else %}
+                    ...
+                {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    
+    <div id="new-matches" class="tab-content" style="display: none;">
+        <h2>새로운 매칭 생성</h2>
+        <input type="text" id="user-search" placeholder="Search by ID or Email">
+        
+        <table border="1">
+            <thead>
+                <tr>
+                    <th><input type="checkbox" id="select-all-new"></th>
+                    <th>User ID</th>
+                    <th>Email</th>
+                </tr>
+            </thead>
+            <tbody id="user-list">
+                </tbody>
+        </table>
+        
+        <p>
+            <label for="new-expert-id">Assign to Expert ID:</label>
+            <input type="number" id="new-expert-id">
+            <button onclick="createNewMatches()">Create Matches</button>
+        </p>
+    </div>
+    
+    <script>
+        function showTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.style.display = 'none';
+            });
+            document.getElementById(tabId).style.display = 'block';
+        }
+        
+        showTab('existing-matches'); // Default tab
+
+        // Select all checkboxes for existing matches
+        document.getElementById('select-all').addEventListener('change', function() {
+            document.querySelectorAll('input[name="selected_matches"]').forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+        });
+
+        // AJAX for New Match Tab
+        const userSearchInput = document.getElementById('user-search');
+        const userListBody = document.getElementById('user-list');
+
+        userSearchInput.addEventListener('input', fetchUnassignedUsers);
+
+        function fetchUnassignedUsers() {
+            const query = userSearchInput.value;
+            fetch(`/match/api/users-unassigned?q=${query}`)
+                .then(response => response.json())
+                .then(users => {
+                    userListBody.innerHTML = '';
+                    users.forEach(user => {
+                        const row = `
+                            <tr>
+                                <td><input type="checkbox" name="selected_users" value="${user.id}"></td>
+                                <td>${user.id}</td>
+                                <td>${user.email}</td>
+                            </tr>
+                        `;
+                        userListBody.innerHTML += row;
+                    });
+                });
+        }
+
+        // Initial fetch
+        fetchUnassignedUsers();
+
+        document.getElementById('select-all-new').addEventListener('change', function() {
+            document.querySelectorAll('input[name="selected_users"]').forEach(checkbox => {
+                checkbox.checked = this.checked;
+            });
+        });
+
+        function createNewMatches() {
+            const selectedUsers = Array.from(document.querySelectorAll('input[name="selected_users"]:checked'))
+                .map(cb => parseInt(cb.value));
+            const expertId = parseInt(document.getElementById('new-expert-id').value);
+
+            if (selectedUsers.length === 0 || !expertId) {
+                alert('Please select at least one user and enter an expert ID.');
+                return;
+            }
+
+            fetch('/match/api/create-matches', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+                },
+                body: JSON.stringify({
+                    user_ids: selectedUsers,
+                    expert_id: expertId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Matches created successfully!');
+                    fetchUnassignedUsers(); // Refresh the list
+                } else {
+                    alert('Error creating matches: ' + data.message);
+                }
+            });
+        }
+    </script>
+</body>
+</html>

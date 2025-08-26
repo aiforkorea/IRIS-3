@@ -1,18 +1,31 @@
+# apps/match/forms.py
 from flask_wtf import FlaskForm
-from wtforms import StringField, SubmitField, SelectField, DateField
+from wtforms import SelectMultipleField, StringField, SubmitField, SelectField, widgets, DateField, FileField, ValidationError
 from wtforms.validators import DataRequired, Optional
-from apps.dbmodels import MatchStatus
+from apps.dbmodels import User, UserType, MatchStatus
+
+class MultiCheckboxField(SelectMultipleField):
+    """체크박스를 여러 개 선택할 수 있는 필드"""
+    widget = widgets.ListWidget(prefix_label=False)
+    option_widget = widgets.CheckboxInput()
+
+class NewMatchForm(FlaskForm):
+    """신규 매칭 탭의 검색 및 할당 폼"""
+    email = StringField("이메일")
+    start_date = DateField("시작일", format='%Y-%m-%d', render_kw={"placeholder": "YYYY-MM-DD"})
+    end_date = DateField("종료일", format='%Y-%m-%d', render_kw={"placeholder": "YYYY-MM-DD"})
+    search_submit = SubmitField("검색")
+    expert_id = SelectField("전문가 선택", coerce=int, validators=[DataRequired()])
+    assign_submit = SubmitField("매칭 생성")
 
 class MatchSearchForm(FlaskForm):
-    user_id = StringField('일반 사용자 ID')
-    expert_id = StringField('전문가 ID')
-    status = SelectField('매칭 상태', choices=[('', '전체')] + [(s.value, s.name) for s in MatchStatus])
-    start_date = DateField('시작일', format='%Y-%m-%d', validators=[Optional()])
-    end_date = DateField('종료일', format='%Y-%m-%d', validators=[Optional()])
-    submit = SubmitField('검색')
-
-class MatchManageForm(FlaskForm):
-    user_id = StringField('일반 사용자 ID', validators=[DataRequired()])
-    expert_id = StringField('전문가 ID', validators=[DataRequired()])
-    status = SelectField('매칭 상태', choices=[(s.value, s.name) for s in MatchStatus], validators=[DataRequired()])
-    submit = SubmitField('저장')
+    user_id = StringField("사용자 ID")
+    expert_id = StringField("전문가 ID")
+    status = SelectField("상태", choices=[('all', '모두')] + [(s.name, s.value) for s in MatchStatus])
+    start_date = DateField("시작일", format='%Y-%m-%d', render_kw={"placeholder": "YYYY-MM-DD"})
+    end_date = DateField("종료일", format='%Y-%m-%d', render_kw={"placeholder": "YYYY-MM-DD"})
+    search_submit = SubmitField("검색")
+    match_ids = MultiCheckboxField("매칭 선택", coerce=int, choices=[])
+    batch_expert_id = SelectField("전문가 할당", coerce=int, choices=[])  # 반드시 리스트로!
+    batch_assign_submit = SubmitField("일괄 할당")
+    batch_cancel_submit = SubmitField("일괄 취소")
