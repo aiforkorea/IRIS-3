@@ -40,3 +40,10 @@ class MatchSearchForm(FlaskForm):
         if 'batch_assign_submit' in request.form:
             if field.data == 0:
                 raise ValidationError("전문가를 반드시 선택해야 합니다.")
+            
+class LogSearchForm(FlaskForm):
+    """로그 검색을 위한 폼"""
+    keyword = StringField('키워드', render_kw={"placeholder": "ID, 로그 내용, 사용자/전문가 이메일 등"})
+    start_date = DateField("시작일", format='%Y-%m-%d')
+    end_date = DateField("종료일", format='%Y-%m-%d')
+    submit = SubmitField("검색")            

@@ -2,13 +2,14 @@
 import datetime
 from flask import render_template, request, redirect, url_for, flash
 from flask_login import login_required, current_user
+from sqlalchemy import or_
 from sqlalchemy.sql import func
 from sqlalchemy.orm import aliased  # Import aliased function
 
 # apps.extensions에서 db를 가져옵니다.
 from apps.extensions import db
 
-from apps.match.forms import MatchSearchForm, NewMatchForm
+from apps.match.forms import LogSearchForm, MatchSearchForm, NewMatchForm
 from ..dbmodels import MatchLog, User, Match, MatchStatus, UserType
 from apps.decorators import admin_required  # 데코레이터
 
@@ -262,3 +263,66 @@ def batch_update_matches():
             flash(f"작업 처리 중 오류가 발생했습니다: {str(e)}", "danger")
 
     return redirect(url_for('match.match_manager'))
+
+@match.route('/logs', methods=['GET'])
+@login_required
+@admin_required
+def log_list():
+    """매칭 로그를 검색하고 목록을 보여주는 페이지"""
+    form = LogSearchForm(request.args)
+    
+    # SQLAlchemy의 aliased를 사용하여 User 테이블에 대한 별칭 생성
+    admin_alias = aliased(User, name='admin')
+    user_alias = aliased(User, name='user')
+    expert_alias = aliased(User, name='expert')
+
+    # 기본 쿼리: MatchLog와 관련된 사용자 정보를 모두 join
+    query = MatchLog.query.outerjoin(
+        admin_alias, MatchLog.admin_id == admin_alias.id
+    ).outerjoin(
+        user_alias, MatchLog.user_id == user_alias.id
+    ).outerjoin(
+        expert_alias, MatchLog.expert_id == expert_alias.id
+    )
+
+    # 필터링할 인자를 담을 딕셔너리
+    filtered_args = {}
+
+    # 1. 키워드 검색
+    if form.keyword.data:
+        keyword = f"%{form.keyword.data}%"
+        query = query.filter(
+            or_(
+                MatchLog.id.ilike(keyword),
+                MatchLog.action_summary.ilike(keyword),
+                MatchLog.details.ilike(keyword),
+                admin_alias.email.ilike(keyword),
+                user_alias.email.ilike(keyword),
+                expert_alias.email.ilike(keyword)
+            )
+        )
+        filtered_args['keyword'] = form.keyword.data
+
+    # 2. 날짜 범위 검색
+    if form.start_date.data:
+        query = query.filter(MatchLog.timestamp >= form.start_date.data)
+        filtered_args['start_date'] = form.start_date.data.isoformat()
+    
+    if form.end_date.data:
+        # 종료일의 마지막 시간(23:59:59)까지 포함하기 위해 1일을 더함
+        end_date = form.end_date.data + datetime.timedelta(days=1)
+        query = query.filter(MatchLog.timestamp < end_date)
+        filtered_args['end_date'] = form.end_date.data.isoformat()
+
+    # 페이지네이션 처리
+    page = request.args.get('page', 1, type=int)
+    pagination = query.order_by(MatchLog.timestamp.desc()).paginate(page=page, per_page=15, error_out=False)
+    logs = pagination.items
+
+    return render_template(
+        'match/log_list.html',
+        form=form,
+        logs=logs,
+        pagination=pagination,
+        filtered_args=filtered_args
+    )

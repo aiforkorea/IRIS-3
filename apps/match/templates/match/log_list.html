@@ -1,0 +1,69 @@
+{# apps/log/templates/log/log_list.html #}
+{% extends "base.html" %}
+{% from "_macros.html" import render_pagination %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4">매칭 로그 관리</h2>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" action="{{ url_for('match.log_list') }}" class="row g-3 align-items-end">
+                <div class="col-md-5">
+                    {{ form.keyword.label(class="form-label") }}
+                    {{ form.keyword(class="form-control") }}
+                </div>
+                <div class="col-md-3">
+                    {{ form.start_date.label(class="form-label") }}
+                    {{ form.start_date(class="form-control", type="date") }}
+                </div>
+                <div class="col-md-3">
+                    {{ form.end_date.label(class="form-label") }}
+                    {{ form.end_date(class="form-control", type="date") }}
+                </div>
+                <div class="col-md-1 d-grid">
+                    <label class="form-label">&nbsp;</label>
+                    {{ form.submit(class="btn btn-primary") }}
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover table-striped">
+            <thead class="table-light">
+                <tr>
+                    <th scope="col">로그 ID</th>
+                    <th scope="col">타임스탬프</th>
+                    <th scope="col">수행자 (Admin)</th>
+                    <th scope="col">사용자</th>
+                    <th scope="col">전문가</th>
+                    <th scope="col">작업 요약</th>
+                    <th scope="col">상세 내용</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.id }}</td>
+                    <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                    <td>{{ log.admin.email if log.admin else 'N/A' }}</td>
+                    <td>{{ log.user.email if log.user else 'N/A' }}</td>
+                    <td>{{ log.expert.email if log.expert else 'N/A' }}</td>
+                    <td>{{ log.action_summary }}</td>
+                    <td>{{ log.details if log.details else '' }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="text-center">표시할 로그가 없습니다.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="mt-4">
+        {{ render_pagination(pagination, 'match.log_list', filtered_args) }}
+    </div>
+</div>
+{% endblock %}
