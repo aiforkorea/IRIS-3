@@ -10,7 +10,7 @@ from sqlalchemy.orm import aliased  # Import aliased function
 from apps.extensions import db
 
 from apps.match.forms import LogSearchForm, MatchSearchForm, NewMatchForm
-from ..dbmodels import MatchLog, User, Match, MatchStatus, UserType
+from ..dbmodels import MatchLog, MatchLogType, User, Match, MatchStatus, UserType
 from apps.decorators import admin_required  # 데코레이터
 
 from . import match  # Blueprint 정의
@@ -173,7 +173,7 @@ def create_new_match():
                             expert_id=expert_id,
                             match_id=new_match.id,
                             match_status=MatchStatus.IN_PROGRESS,
-                            log_title=MatchLogType.MATCH_CREATE,
+                            log_title=MatchLogType.MATCH_CREATE.value,
                             log_summary=f"신규 매칭 생성: 사용자({user_id}) - 전문가({expert_id})"
                         )
                         db.session.add(match_log)
@@ -247,7 +247,7 @@ def batch_update_matches():
                         admin_id=current_user.id,
                         match_id=match_id,
                         match_status=MatchStatus.IN_PROGRESS,
-                        log_title=MatchLogType.MATCH_EXPERT_CHANGE,
+                        log_title=MatchLogType.MATCH_EXPERT_CHANGE.value,
                         log_summary=f"매칭 전문가 변경: 기존({original_expert_id}) -> 신규({new_expert_id})"
                     )
                     db.session.add(match_log)
@@ -278,7 +278,7 @@ def batch_update_matches():
                         admin_id=current_user.id,
                         match_id=match_id,
                         match_status=MatchStatus.CANCELLED,
-                        log_title=MatchLogType.MATCH_ERASE,
+                        log_title=MatchLogType.MATCH_ERASE.value,
                         log_summary=f"매치 취소 처리: 매칭 ID {match_id}",
                     )
                     db.session.add(match_log)

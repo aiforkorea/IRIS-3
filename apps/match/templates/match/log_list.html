@@ -52,8 +52,8 @@
                     <td>{{ log.admin.email if log.admin else 'N/A' }}</td>
                     <td>{{ log.user.email if log.user else 'N/A' }}</td>
                     <td>{{ log.expert.email if log.expert else 'N/A' }}</td>
-                    <td>{{ log.action_summary }}</td>
-                    <td>{{ log.details if log.details else '' }}</td>
+                    <td>{{ log.log_title }}</td>
+                    <td>{{ log.log_summary if log.log_summary else '' }}</td>
                 </tr>
                 {% else %}
                 <tr>
