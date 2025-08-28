@@ -9,7 +9,7 @@
     <ul class="nav nav-tabs" id="matchTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link {% if not pagination or request.endpoint == 'match.create_new_match' %}active{% endif %}" id="new-match-tab" data-bs-toggle="tab" data-bs-target="#new-match" type="button" role="tab" aria-controls="new-match" aria-selected="true">
-                신규 매칭 ({{ unassigned_matches_count }})
+                신규 매칭 ({{ unassigned_matches|length }})
             </button>
         </li>
         <li class="nav-item" role="presentation">
@@ -29,8 +29,8 @@
                     <form method="POST" action="{{ url_for('match.match_manager') }}" class="row g-2 align-items-end">
                         {{ new_match_form.csrf_token }}
                         <div class="col-12 col-md-3">
-                            {{ new_match_form.keyword.label(class="form-label visually-hidden") }}
-                            {{ new_match_form.keyword(class="form-control form-control-sm", type="search", placeholder="사용자 ID, 이메일") }}
+                            {{ new_match_form.email.label(class="form-label visually-hidden") }}
+                            {{ new_match_form.email(class="form-control form-control-sm", placeholder="사용자 이메일") }}
                         </div>
                         <div class="col-12 col-md-2">
                             {{ new_match_form.start_date.label(class="form-label visually-hidden") }}

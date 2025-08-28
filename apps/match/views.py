@@ -1,15 +1,18 @@
 # apps/match/views.py
-import datetime
-from flask import render_template, request, redirect, url_for, flash
+import csv
+from io import StringIO
+from datetime import datetime, time
+from flask import render_template, request, redirect, url_for, flash, Response
 from flask_login import login_required, current_user
-from sqlalchemy import or_
+from sqlalchemy import or_, cast, String
 from sqlalchemy.sql import func
 from sqlalchemy.orm import aliased  # Import aliased function
+from sqlalchemy.orm import joinedload
 
 # apps.extensions에서 db를 가져옵니다.
 from apps.extensions import db
 
-from apps.match.forms import LogSearchForm, MatchSearchForm, NewMatchForm
+from apps.match.forms import LogSearchForm, MatchSearchForm, NewMatchForm, AdminLogSearchForm
 from ..dbmodels import MatchLog, MatchLogType, User, Match, MatchStatus, UserType
 from apps.decorators import admin_required  # 데코레이터
 
@@ -64,18 +67,30 @@ def match_manager():
     new_match_query = User.query.filter(User.user_type == UserType.USER, User.match_status == MatchStatus.UNASSIGNED)
     if request.method == 'POST' and 'search_submit' in request.form:
         if new_match_form.validate_on_submit():
-            email_query = new_match_form.email.data
+            
+            keyword_query = new_match_form.keyword.data
             start_date_query = new_match_form.start_date.data
             end_date_query = new_match_form.end_date.data
 
-            if email_query:
-                new_match_query = new_match_query.filter(User.email.ilike(f'%{email_query}%'))
+            #if email_query:
+            #    new_match_query = new_match_query.filter(User.email.ilike(f'%{email_query}%'))
+
+            # 검색 기능 (사용자 ID, 이름 또는 이메일)
+            if keyword_query:
+                new_match_query = new_match_query.filter(
+                    or_(
+                        cast(User.user_id, String).ilike(f'%{keyword_query}%'),
+                        User.username.ilike(f'%{keyword_query}%'),
+                        User.email.ilike(f'%{keyword_query}%')
+                    )
+                )
             if start_date_query:
                 new_match_query = new_match_query.filter(User.created_at >= start_date_query)
             if end_date_query:
                 new_match_query = new_match_query.filter(User.created_at <= end_date_query + datetime.timedelta(days=1))
     
     users_to_match = new_match_query.order_by(User.created_at.desc()).all()
+    print(f"신규 매칭 유저: {users_to_match}")
 
     # '매칭 관리' 탭 로직 (검색 및 페이지네이션)
     page = request.args.get('page', 1, type=int)
@@ -85,7 +100,11 @@ def match_manager():
     
     # 두 번째 outerjoin에 aliased 객체 사용
     matches_query = db.session.query(Match).join(User, Match.user_id == User.id).outerjoin(expert_alias, Match.expert_id == expert_alias.id)
-    print(matches_query)    
+    print(f"매치 관리 유저 쿼리: {matches_query}")
+
+    # --- MatchStatus.COMPLETED 상태만 가져오도록 필터 추가 ---
+    matches_query = matches_query.filter(Match.status == MatchStatus.COMPLETED)
+     
     # filtered_args 딕셔너리 초기화
     filtered_args = {}
 
@@ -115,10 +134,17 @@ def match_manager():
 
     pagination = matches_query.order_by(Match.created_at.desc()).paginate(page=page, per_page=10, error_out=False)
     matches_history = pagination.items
-    print(matches_history)
+    print(f"matches_history: {matches_history}")
     # 탭별 항목 수 계산
     unassigned_matches_count = User.query.filter_by(match_status=MatchStatus.UNASSIGNED, user_type=UserType.USER).count()
     completed_matches_count = Match.query.filter(Match.status.in_([MatchStatus.IN_PROGRESS, MatchStatus.COMPLETED])).count()
+
+
+    print(f"new_match_form: {new_match_form}")
+    print(f"신규 매칭 유저: {users_to_match}")
+    print(f"matches_history: {matches_history}")
+    print(f"unassigned_matches_count: {unassigned_matches_count}")
+    print(f"completed_matches_count: {completed_matches_count}")
 
     return render_template(
         'match/match_manager.html',
@@ -157,29 +183,37 @@ def create_new_match():
         else:
             new_matches_created = []
             try:
+                # 전문가 객체를 미리 조회합니다.
+                expert_to_match = User.query.get(expert_id)
+                expert_username = expert_to_match.username if expert_to_match else "알 수 없는 전문가"
+
                 for user_id in user_ids:
                     user_to_match = User.query.get(user_id)
                     if user_to_match and user_to_match.match_status == MatchStatus.UNASSIGNED:
-                        new_match = Match(user_id=user_id, expert_id=expert_id, status=MatchStatus.IN_PROGRESS)
+                        new_match = Match(user_id=user_id, expert_id=expert_id, status=MatchStatus.COMPLETED)  # IN_PROCESS
                         db.session.add(new_match)
                         
                         db.session.flush()
 
-                        user_to_match.match_status = MatchStatus.IN_PROGRESS
+                        user_to_match.match_status = MatchStatus.COMPLETED
                         print(f'("user_id",user_id)')
+                        user_username = user_to_match.username
+                        log_summary = f"신규 매칭 생성: 사용자({user_username})({user_id}) - 전문가({expert_username})({expert_id})"
+                        
                         match_log = MatchLog(
                             admin_id=current_user.id,
                             user_id=user_id,
                             expert_id=expert_id,
                             match_id=new_match.id,
-                            match_status=MatchStatus.IN_PROGRESS,
+                            match_status=MatchStatus.COMPLETED,
                             log_title=MatchLogType.MATCH_CREATE.value,
-                            log_summary=f"신규 매칭 생성: 사용자({user_id}) - 전문가({expert_id})"
+                            log_summary=log_summary
                         )
                         db.session.add(match_log)
                         new_matches_created.append(user_id)
                     else:
                         flash(f"사용자 ID {user_id}는 이미 매칭 상태이거나 존재하지 않습니다.", "warning")
+
             
                 db.session.commit()
                 flash(f"총 {len(new_matches_created)}건의 새로운 매칭이 생성되었습니다.", "success")
@@ -237,27 +271,31 @@ def batch_update_matches():
         try:
             new_expert_id = match_search_form.batch_expert_id.data
             updated_count = 0
+ 
+            # Fetch the new expert's username
+            new_expert_user = User.query.get(new_expert_id)
+            new_expert_username = new_expert_user.username if new_expert_user else "알 수 없는 전문가"
+ 
             for match_id in match_ids:
                 match_to_update = Match.query.get(match_id)
-                #print("match_to_update1")
-                #print(match_to_update)
-                #print("match_to_update2")
-                #print(match_to_update.user_id)
-                if match_to_update and match_to_update.status == MatchStatus.IN_PROGRESS:
+                if match_to_update and match_to_update.status == MatchStatus.COMPLETED:
                     original_expert_id = match_to_update.expert_id
+                    original_expert_user = User.query.get(match_to_update.expert_id)
+                    original_expert_username = original_expert_user.username if original_expert_user else "알 수 없는 전문가"
+                    
                     match_to_update.expert_id = new_expert_id
-                    print(match_to_update.user_id)
-                    #print(match_to_update.user_id.username)
-                    username = match_to_update.user.username
-                    print(username)  
+                    
+                    # --- 수정된 부분 ---
+                    log_summary = f"매칭 전문가 변경: 기존({original_expert_username})({original_expert_id}) -> 신규({new_expert_username})({new_expert_id})"
+                    
                     match_log = MatchLog(
                         admin_id=current_user.id,
                         user_id=match_to_update.user_id,
                         expert_id=new_expert_id,
                         match_id=match_id,
-                        match_status=MatchStatus.IN_PROGRESS,
+                        match_status=MatchStatus.COMPLETED,
                         log_title=MatchLogType.MATCH_EXPERT_CHANGE.value,
-                        log_summary=f"매칭 전문가 변경: 기존({original_expert_id}) -> 신규({new_expert_id})"
+                        log_summary=log_summary
                     )
                     db.session.add(match_log)
                     updated_count += 1
@@ -279,16 +317,33 @@ def batch_update_matches():
                 match_to_cancel = Match.query.get(match_id)
                 if match_to_cancel and match_to_cancel.status != MatchStatus.CANCELLED:
                     match_to_cancel.status = MatchStatus.CANCELLED
-                    match_to_cancel.closed_at = datetime.datetime.now()
+                    match_to_cancel.closed_at = datetime.now()
+
                     user = User.query.get(match_to_cancel.user_id)
+                    expert = User.query.get(match_to_cancel.expert_id)
+
+                    # 사용자 정보 가져오기
+                    user_username = user.username if user else "알 수 없는 사용자"
+                    user_id = user.id if user else "알 수 없음"
+
+                    # 전문가 정보 가져오기
+                    expert_username = expert.username if expert else "알 수 없는 전문가"
+                    expert_id = expert.id if expert else "알 수 없음"
+
                     if user:
                         user.match_status = MatchStatus.UNASSIGNED
+
+                    # --- 수정된 부분: log_summary에 사용자 및 전문가 정보 모두 포함 ---
+                    log_summary = f"매치 취소 처리: 사용자({user_username}, ID: {user_id}), 전문가({expert_username}, ID: {expert_id})"
+
                     match_log = MatchLog(
                         admin_id=current_user.id,
                         match_id=match_id,
+                        user_id=match_to_cancel.user_id,
+                        expert_id=match_to_cancel.expert_id,
                         match_status=MatchStatus.CANCELLED,
                         log_title=MatchLogType.MATCH_ERASE.value,
-                        log_summary=f"매치 취소 처리: 매칭 ID {match_id}",
+                        log_summary=log_summary,
                     )
                     db.session.add(match_log)
                     cancelled_count += 1
@@ -299,21 +354,6 @@ def batch_update_matches():
             flash(f"작업 처리 중 오류가 발생했습니다: {str(e)}", "danger")
 
     return redirect(url_for('match.match_manager'))
-
-import csv
-from datetime import datetime, time
-from io import StringIO
-from flask import render_template, request, redirect, url_for, flash, Response
-from flask_login import login_required, current_user
-from sqlalchemy import or_, cast, String
-from sqlalchemy.orm import joinedload
-
-from apps.extensions import db
-from apps.match.forms import AdminLogSearchForm
-from ..dbmodels import MatchLog, MatchLogType, User, Match, MatchStatus
-from apps.decorators import admin_required
-
-from . import match
 
 @match.route('/logs', methods=['GET', 'POST'])
 @login_required
@@ -451,10 +491,11 @@ def logs_download_csv():
         ]
         writer.writerow(row)
     
-    output.seek(0)
-    
-    return Response(
-        output.getvalue(),
-        mimetype="text/csv",
-        headers={"Content-disposition": "attachment; filename=match_logs.csv"}
-    )
+    # StringIO의 내용을 가져와서 utf-8-sig로 인코딩합니다.
+    output_str = output.getvalue()
+    output_bytes = output_str.encode('utf-8-sig')
+    output.close()
+    # csv 파일을 응답으로 반환
+    response = Response(output_bytes, mimetype='text/csv; charset=utf-8-sig')
+    response.headers['Content-Disposition'] = f'attachment; filename=matchlog_results_{datetime.now().strftime("%Y%m%d%H%M%S")}.csv'
+    return response

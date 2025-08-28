@@ -11,13 +11,14 @@ class MultiCheckboxField(SelectMultipleField):
     option_widget = widgets.CheckboxInput()
 
 class NewMatchForm(FlaskForm):
-    """신규 매칭 탭의 검색 및 할당 폼"""
-    email = StringField("이메일")
+    """관리자 신규 매칭 탭의 검색 및 할당 폼"""
+    keyword = StringField('키워드', render_kw={"placeholder": "user ID, 이메일 등"})
     start_date = DateField("시작일", format='%Y-%m-%d', render_kw={"placeholder": "YYYY-MM-DD"})
     end_date = DateField("종료일", format='%Y-%m-%d', render_kw={"placeholder": "YYYY-MM-DD"})
     search_submit = SubmitField("검색")
     expert_id = SelectField("전문가 선택", coerce=int, validators=[DataRequired()])
     assign_submit = SubmitField("매칭 생성")
+
 
 # 수정된 MatchSearchForm 클래스
 class MatchSearchForm(FlaskForm):
