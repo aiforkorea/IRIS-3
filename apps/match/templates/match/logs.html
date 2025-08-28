@@ -1,0 +1,128 @@
+{# apps/log/templates/log/logs.html #}
+{% extends "base.html" %}
+{% from "_macros.html" import render_pagination %}
+
+{% block content %}
+<div class="container-fluid">
+    <h5 class="mb-1">매칭 로그 검색</h5>
+    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-4">
+        <div class="card flex-grow-1 me-lg-3 mb-3 mb-lg-0">
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('match.log_list') }}" class="row g-2 align-items-lg-center">
+                    {{ form.csrf_token }} 
+                    <div class="col-12 col-md-4 col-lg-4">
+                        {{ form.keyword.label(class="visually-hidden") }}
+                        {{ form.keyword(class="form-control form-control-sm", type="search", placeholder="사용자/전문가 ID, 로그 제목, 내용 등") }}
+                    </div>
+                    <div class="col-12 col-md-4 col-lg-2">
+                        {{ form.log_title.label(class="visually-hidden") }}
+                        {{ form.log_title(class="form-select form-select-sm") }}
+                    </div>
+                    <div class="col-12 col-md-2 col-lg-2">
+                        {{ form.start_date.label(class="visually-hidden") }}
+                        {{ form.start_date(class="form-control form-control-sm", type="date") }}
+                    </div>
+                    <div class="col-auto d-flex align-items-center">
+                        <span class="form-label mb-0">~</span>
+                    </div>
+                    <div class="col-12 col-md-2 col-lg-2">
+                        {{ form.end_date.label(class="visually-hidden") }}
+                        {{ form.end_date(class="form-control form-control-sm", type="date") }}
+                    </div>
+                    <div class="col-12 col-md-1 d-grid col-lg-1">
+                        {{ form.submit(class="btn btn-primary btn-sm") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+        <div class="d-flex justify-content-end flex-shrink-0">
+            <a href="{{ url_for('match.logs_download_csv') }}?{{ request.query_string.decode('utf-8') }}" class="btn btn-success">
+                <i class="fas fa-download"></i> 다운로드
+            </a>
+        </div>
+    </div>
+    {% if logs %}
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>ID</th>
+                    <th>행위자(Admin)</th>
+                    <th>사용자(ID)</th>
+                    <th>전문가(ID)</th>
+                    <th>매치 ID</th>
+                    <th>로그 제목</th>
+                    <th>내용 요약</th>
+                    <th>타임스탬프</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.id }}</td>
+                    <td>
+                        {% if log.admin %}
+                            {{ log.admin.username }} ({{ log.admin_id }})
+                        {% else %}
+                            - ({{ log.admin_id }})
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if log.user %}
+                            {{ log.user.username }} ({{ log.user_id }})
+                        {% else %}
+                            - ({{ log.user_id }})
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if log.expert %}
+                            {{ log.expert.username }} ({{ log.expert_id }})
+                        {% else %}
+                            - ({{ log.expert_id }})
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if log.match_id %}
+                            {{ log.match_id }}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>{{ log.log_title }}</td>
+                    <td title="{{ log.log_summary }}">
+                        {{ log.log_summary[:50] }}{% if log.log_summary|length > 50 %}...{% endif %}
+                    </td>
+                    <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>ID</th>
+                    <th>행위자(Admin)</th>
+                    <th>사용자(ID)</th>
+                    <th>전문가(ID)</th>
+                    <th>매치 ID</th>
+                    <th>로그 제목</th>
+                    <th>내용 요약</th>
+                    <th>타임스탬프</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td colspan="8" class="text-center">해당하는 로그가 없습니다.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+    <div class="card-footer">
+        {{ render_pagination(pagination, 'match.log_list', filtered_args) }}
+    </div>
+</div>
+{% endblock %}

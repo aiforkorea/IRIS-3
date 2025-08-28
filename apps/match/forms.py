@@ -57,3 +57,4 @@ class AdminLogSearchForm(FlaskForm):
     start_date = DateField("시작일", format='%Y-%m-%d', validators=[Optional()])
     end_date = DateField("종료일", format='%Y-%m-%d', validators=[Optional()])
     submit = SubmitField("검색")    
+

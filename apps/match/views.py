@@ -166,7 +166,7 @@ def create_new_match():
                         db.session.flush()
 
                         user_to_match.match_status = MatchStatus.IN_PROGRESS
-
+                        print(f'("user_id",user_id)')
                         match_log = MatchLog(
                             admin_id=current_user.id,
                             user_id=user_id,
@@ -239,12 +239,21 @@ def batch_update_matches():
             updated_count = 0
             for match_id in match_ids:
                 match_to_update = Match.query.get(match_id)
+                #print("match_to_update1")
+                #print(match_to_update)
+                #print("match_to_update2")
+                #print(match_to_update.user_id)
                 if match_to_update and match_to_update.status == MatchStatus.IN_PROGRESS:
                     original_expert_id = match_to_update.expert_id
                     match_to_update.expert_id = new_expert_id
-
+                    print(match_to_update.user_id)
+                    #print(match_to_update.user_id.username)
+                    username = match_to_update.user.username
+                    print(username)  
                     match_log = MatchLog(
                         admin_id=current_user.id,
+                        user_id=match_to_update.user_id,
+                        expert_id=new_expert_id,
                         match_id=match_id,
                         match_status=MatchStatus.IN_PROGRESS,
                         log_title=MatchLogType.MATCH_EXPERT_CHANGE.value,
@@ -291,65 +300,161 @@ def batch_update_matches():
 
     return redirect(url_for('match.match_manager'))
 
-@match.route('/logs', methods=['GET','POST'])
+import csv
+from datetime import datetime, time
+from io import StringIO
+from flask import render_template, request, redirect, url_for, flash, Response
+from flask_login import login_required, current_user
+from sqlalchemy import or_, cast, String
+from sqlalchemy.orm import joinedload
+
+from apps.extensions import db
+from apps.match.forms import AdminLogSearchForm
+from ..dbmodels import MatchLog, MatchLogType, User, Match, MatchStatus
+from apps.decorators import admin_required
+
+from . import match
+
+@match.route('/logs', methods=['GET', 'POST'])
 @login_required
 @admin_required
 def log_list():
     """매칭 로그를 검색하고 목록을 보여주는 페이지"""
-    form = LogSearchForm(request.args)
+    PER_PAGE = 10
     
-    # SQLAlchemy의 aliased를 사용하여 User 테이블에 대한 별칭 생성
-    admin_alias = aliased(User, name='admin')
-    user_alias = aliased(User, name='user')
-    expert_alias = aliased(User, name='expert')
-
+    form = AdminLogSearchForm()
+    
     # 기본 쿼리: MatchLog와 관련된 사용자 정보를 모두 join
-    query = MatchLog.query.outerjoin(
-        admin_alias, MatchLog.admin_id == admin_alias.id
-    ).outerjoin(
-        user_alias, MatchLog.user_id == user_alias.id
-    ).outerjoin(
-        expert_alias, MatchLog.expert_id == expert_alias.id
+    logs_query = MatchLog.query.options(
+        joinedload(MatchLog.admin),
+        joinedload(MatchLog.user),
+        joinedload(MatchLog.expert)
     )
-
-    # 필터링할 인자를 담을 딕셔너리
+    
     filtered_args = {}
 
-    # 1. 키워드 검색
+    if form.validate_on_submit():
+        # POST 요청: 폼 데이터를 처리하고 GET 요청으로 리디렉션 (PRG 패턴)
+        filtered_args['keyword'] = form.keyword.data if form.keyword.data else ''
+        filtered_args['log_title'] = form.log_title.data if form.log_title.data else ''
+        filtered_args['start_date'] = form.start_date.data.isoformat() if form.start_date.data else ''
+        filtered_args['end_date'] = form.end_date.data.isoformat() if form.end_date.data else ''
+        return redirect(url_for('match.log_list', **filtered_args))
+    
+    elif request.method == 'GET':
+        # GET 요청: URL의 쿼리 파라미터로 폼을 채움
+        form = AdminLogSearchForm(request.args)
+    
+    # GET 또는 POST 리디렉션 후 필터링 로직
+    # 폼 데이터가 유효한 경우에만 필터링을 적용
     if form.keyword.data:
         keyword = f"%{form.keyword.data}%"
-        query = query.filter(
+        logs_query = logs_query.filter(
             or_(
-                MatchLog.id.ilike(keyword),
-                MatchLog.action_summary.ilike(keyword),
-                MatchLog.details.ilike(keyword),
-                admin_alias.email.ilike(keyword),
-                user_alias.email.ilike(keyword),
-                expert_alias.email.ilike(keyword)
+                cast(MatchLog.user_id, String).ilike(keyword),
+                cast(MatchLog.expert_id, String).ilike(keyword),
+                MatchLog.log_title.ilike(keyword),
+                MatchLog.log_summary.ilike(keyword)
             )
         )
         filtered_args['keyword'] = form.keyword.data
 
-    # 2. 날짜 범위 검색
-    if form.start_date.data:
-        query = query.filter(MatchLog.timestamp >= form.start_date.data)
-        filtered_args['start_date'] = form.start_date.data.isoformat()
+    if form.log_title.data:
+        logs_query = logs_query.filter(MatchLog.log_title == form.log_title.data)
+        filtered_args['log_title'] = form.log_title.data
     
+    if form.start_date.data:
+        start_of_day = datetime.combine(form.start_date.data, time.min)
+        logs_query = logs_query.filter(MatchLog.timestamp >= start_of_day)
+        filtered_args['start_date'] = form.start_date.data.isoformat()
+        
     if form.end_date.data:
-        # 종료일의 마지막 시간(23:59:59)까지 포함하기 위해 1일을 더함
-        end_date = form.end_date.data + datetime.timedelta(days=1)
-        query = query.filter(MatchLog.timestamp < end_date)
+        end_of_day = datetime.combine(form.end_date.data, time.max)
+        logs_query = logs_query.filter(MatchLog.timestamp <= end_of_day)
         filtered_args['end_date'] = form.end_date.data.isoformat()
-
-    # 페이지네이션 처리
+    
     page = request.args.get('page', 1, type=int)
-    pagination = query.order_by(MatchLog.timestamp.desc()).paginate(page=page, per_page=15, error_out=False)
-    logs = pagination.items
-
+    logs_pagination = logs_query.order_by(MatchLog.timestamp.desc()).paginate(
+        page=page, 
+        per_page=PER_PAGE, 
+        error_out=False
+    )
+    
     return render_template(
-        'match/log_list.html',
+        'match/logs.html',
+        title='매칭 로그 조회',
         form=form,
-        logs=logs,
-        pagination=pagination,
-        filtered_args=filtered_args
+        logs=logs_pagination.items,
+        pagination=logs_pagination,
+        filtered_args=filtered_args,
+    )
+
+@match.route('/logs/download-csv')
+@login_required
+@admin_required
+def logs_download_csv():
+    """필터링된 매칭 로그를 CSV 파일로 다운로드합니다."""
+    # GET 요청의 쿼리 파라미터로 필터링 조건을 가져옴
+    form = AdminLogSearchForm(request.args)
+    
+    logs_query = MatchLog.query.options(
+        joinedload(MatchLog.admin),
+        joinedload(MatchLog.user),
+        joinedload(MatchLog.expert)
+    )
+
+    if form.keyword.data:
+        keyword = f"%{form.keyword.data}%"
+        logs_query = logs_query.filter(
+            or_(
+                cast(MatchLog.user_id, String).ilike(keyword),
+                cast(MatchLog.expert_id, String).ilike(keyword),
+                MatchLog.log_title.ilike(keyword),
+                MatchLog.log_summary.ilike(keyword)
+            )
+        )
+
+    if form.log_title.data:
+        logs_query = logs_query.filter(MatchLog.log_title == form.log_title.data)
+    
+    if form.start_date.data:
+        start_of_day = datetime.combine(form.start_date.data, time.min)
+        logs_query = logs_query.filter(MatchLog.timestamp >= start_of_day)
+        
+    if form.end_date.data:
+        end_of_day = datetime.combine(form.end_date.data, time.max)
+        logs_query = logs_query.filter(MatchLog.timestamp <= end_of_day)
+    
+    logs = logs_query.order_by(MatchLog.timestamp.desc()).all()
+    
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # CSV 헤더 작성
+    headers = [
+        "ID", "행위자(Admin ID)", "대상 사용자(User ID)", "대상 전문가(Expert ID)",
+        "매치 ID", "로그 제목", "내용 요약", "타임스탬프"
+    ]
+    writer.writerow(headers)
+    
+    # 로그 데이터 작성
+    for log in logs:
+        row = [
+            log.id,
+            log.admin_id,
+            log.user_id,
+            log.expert_id,
+            log.match_id,
+            log.log_title,
+            log.log_summary,
+            log.timestamp.strftime('%Y-%m-%d %H:%M:%S')
+        ]
+        writer.writerow(row)
+    
+    output.seek(0)
+    
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-disposition": "attachment; filename=match_logs.csv"}
     )
