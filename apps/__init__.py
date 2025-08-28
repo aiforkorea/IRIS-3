@@ -70,7 +70,7 @@ def create_app():   # factory 함수
 
     # db 테이블 생성 및 관리자 초기계정 생성
     with app.app_context():
-        #db.drop_all()         # 운영시에는 커멘트 처리 필요
+        db.drop_all()         # 운영시에는 커멘트 처리 필요
         db.create_all()       # 테이블 생성
         # 최초 관리자 계정 생성
         admin_username = app.config.get('ADMIN_USERNAME')

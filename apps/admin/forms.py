@@ -1,8 +1,8 @@
 # apps/admin/forms.py
 from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, SelectField, BooleanField, SubmitField
-from wtforms.validators import DataRequired, Email, EqualTo, ValidationError
-from apps.dbmodels import User, UserType
+from wtforms import StringField, PasswordField, SelectField, BooleanField, SubmitField, DateField
+from wtforms.validators import DataRequired, Email, EqualTo, ValidationError, Optional
+from apps.dbmodels import User, UserType, UserLogType
 
 # --- Form Classes ---
 class EditUserForm(FlaskForm):
@@ -40,5 +40,12 @@ class CreateUserForm(FlaskForm):
         if User.query.filter_by(email=email.data).first():
             raise ValidationError('이미 존재하는 이메일입니다.')
         
-
-        
+       
+class AdminLogSearchForm(FlaskForm):
+    """관리자 로그 검색을 위한 폼"""
+    keyword = StringField('키워드', render_kw={"placeholder": "ID, 대상ID, 로그제목, 엔드포인트, 타이틀, 내용 등"})
+    # coerce=str을 추가하여 빈 문자열을 허용
+    log_title = SelectField("로그 제목", choices=[('', '모든 제목')] + [(type.value, type.value) for type in UserLogType], coerce=str)
+    start_date = DateField("시작일", format='%Y-%m-%d', validators=[Optional()])
+    end_date = DateField("종료일", format='%Y-%m-%d', validators=[Optional()])
+    submit = SubmitField("검색")

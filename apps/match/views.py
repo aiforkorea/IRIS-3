@@ -15,6 +15,30 @@ from apps.decorators import admin_required  # 데코레이터
 
 from . import match  # Blueprint 정의
 
+"""
+    admin_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # 행위자(admin)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # 일반 사용자
+    expert_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # 전문가
+    match_id = db.Column(db.Integer, db.ForeignKey('matches.id'))  # 매칭 대상
+
+def log_action(title, summary, target_user_id=None, status_code=200):
+    #관리자 행동을 로그로 기록하는 헬퍼 함수
+    try:
+        new_log = MatchLog(
+            user_id=current_user.id,
+            target_user_id=target_user_id,
+            endpoint=request.path,
+            log_title=title,
+            log_summary=summary,
+            remote_addr=request.remote_addr,
+            response_status_code=status_code,
+        )
+        db.session.add(new_log)
+    except Exception as e:
+        # 로깅 실패가 주 작업에 영향을 주지 않도록 처리
+        print(f"로깅 실패: {e}")
+"""
+
 @match.route('/', methods=['GET', 'POST'], strict_slashes=False)
 @login_required
 @admin_required
@@ -149,7 +173,8 @@ def create_new_match():
                             expert_id=expert_id,
                             match_id=new_match.id,
                             match_status=MatchStatus.IN_PROGRESS,
-                            action_summary=f"신규 매칭 생성: 사용자({user_id}) - 전문가({expert_id})"
+                            log_title=MatchLogType.MATCH_CREATE,
+                            log_summary=f"신규 매칭 생성: 사용자({user_id}) - 전문가({expert_id})"
                         )
                         db.session.add(match_log)
                         new_matches_created.append(user_id)
@@ -222,7 +247,8 @@ def batch_update_matches():
                         admin_id=current_user.id,
                         match_id=match_id,
                         match_status=MatchStatus.IN_PROGRESS,
-                        action_summary=f"매칭 전문가 변경: 기존({original_expert_id}) -> 신규({new_expert_id})"
+                        log_title=MatchLogType.MATCH_EXPERT_CHANGE,
+                        log_summary=f"매칭 전문가 변경: 기존({original_expert_id}) -> 신규({new_expert_id})"
                     )
                     db.session.add(match_log)
                     updated_count += 1
@@ -252,7 +278,8 @@ def batch_update_matches():
                         admin_id=current_user.id,
                         match_id=match_id,
                         match_status=MatchStatus.CANCELLED,
-                        action_summary=f"매칭 취소 처리: 매칭 ID {match_id}"
+                        log_title=MatchLogType.MATCH_ERASE,
+                        log_summary=f"매치 취소 처리: 매칭 ID {match_id}",
                     )
                     db.session.add(match_log)
                     cancelled_count += 1
@@ -264,7 +291,7 @@ def batch_update_matches():
 
     return redirect(url_for('match.match_manager'))
 
-@match.route('/logs', methods=['GET'])
+@match.route('/logs', methods=['GET','POST'])
 @login_required
 @admin_required
 def log_list():

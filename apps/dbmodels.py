@@ -50,6 +50,12 @@ class MatchStatus(enum.Enum):
     COMPLETED = "completed"    # 매칭 완료
     CANCELLED = "cancelled"    # 매칭 취소
 
+class MatchLogType(enum.Enum):  # 매칭 로그 구분
+    MATCH_CREATE = "매치생성"
+    MATCH_ERASE = "매치삭제"
+    MATCH_EXPERT_CHANGE = "매치전문가변경"
+    MATCH_USER_ROLE_CHANGE = "사용자역할변경"   # User에서 expert -> user, user -> expert
+
 class User(db.Model, UserMixin):
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
@@ -67,21 +73,19 @@ class User(db.Model, UserMixin):
     # [새로 추가된 필드]
     match_status = db.Column(db.Enum(MatchStatus), nullable=False, default=MatchStatus.UNASSIGNED) # 사용자의 매칭 상태
 
-    # [수정] backref 대신 back_populates를 사용하여 양방향 관계를 명시적으로 설정
+    # Corrected relationships
     action_logs = db.relationship('Log', foreign_keys='Log.user_id', back_populates='actor', lazy='dynamic')
     targeted_logs = db.relationship('Log', foreign_keys='Log.target_user_id', back_populates='target_user', lazy='dynamic')
-    # 연관된 로그 (User가 삭제될 때 관련 로그는 유지)
     api_keys = db.relationship("APIKey", back_populates="user", lazy=True, cascade="all, delete-orphan")
     usage_logs = db.relationship("UsageLog", back_populates="user", lazy=True, cascade="all, delete-orphan")
     subscriptions=db.relationship("Subscription", back_populates="user", lazy=True, cascade="all, delete-orphan")
     prediction_results = db.relationship("PredictionResult", back_populates="user", lazy=True, cascade="all, delete-orphan")
-    # 관계 추가
     matches_as_user = db.relationship('Match', foreign_keys='Match.user_id', back_populates='user', lazy='dynamic')
     matches_as_expert = db.relationship('Match', foreign_keys='Match.expert_id', back_populates='expert', lazy='dynamic')
-
     admin_logs = db.relationship('MatchLog', foreign_keys='MatchLog.admin_id', back_populates='admin', lazy=True)
     user_match_logs = db.relationship('MatchLog', foreign_keys='MatchLog.user_id', back_populates='user', lazy=True)
     expert_match_logs = db.relationship('MatchLog', foreign_keys='MatchLog.expert_id', back_populates='expert', lazy=True)
+    expert_profile = db.relationship('ExpertProfile', back_populates='user', uselist=False)
 
     @property
     def password(self):
@@ -134,8 +138,8 @@ class ExpertProfile(db.Model):
     bio = db.Column(db.Text) # 자기소개
     expertise_field = db.Column(db.String(100))
     career_years = db.Column(db.Integer)
-    # 관계
-    user = db.relationship('User', backref=db.backref('expert_profile', uselist=False))
+    # 관계 Consistent use of back_populates
+    user = db.relationship('User', back_populates='expert_profile', uselist=False)
 
 class Log(db.Model):
     __tablename__ = "logs"
@@ -147,9 +151,10 @@ class Log(db.Model):
     
     # [수정] backref 대신 back_populates를 사용하고, 상대편 모델의 속성 이름을 정확히 지정
     actor = db.relationship('User', foreign_keys=[user_id], back_populates='action_logs')
-    target_user = db.relationship('User', foreign_keys=[target_user_id], back_populates='targeted_logs')
-    
+    target_user = db.relationship('User', foreign_keys=[target_user_id], back_populates='targeted_logs')    
+
     endpoint = db.Column(db.String(120), nullable=False)
+
     log_title = db.Column(db.String(50), nullable=False)
     log_summary = db.Column(db.Text)
     
@@ -182,7 +187,6 @@ class Match(db.Model):
 class MatchLog(db.Model):
     __tablename__ = 'match_logs'
     id = db.Column(db.Integer, primary_key=True)
-    timestamp = db.Column(db.DateTime, default=func.now())
     admin_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # 행위자(admin)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # 일반 사용자
     expert_id = db.Column(db.Integer, db.ForeignKey('users.id'))  # 전문가
@@ -191,8 +195,13 @@ class MatchLog(db.Model):
     # [수정] String 대신 Enum 사용
     match_status = db.Column(db.Enum(MatchStatus), nullable=False)
     
-    action_summary = db.Column(db.String(255))
-    details = db.Column(db.Text, nullable=True)
+    log_title = db.Column(db.String(50), nullable=False)
+    log_summary = db.Column(db.Text, nullable=True)
+
+    #action_summary = db.Column(db.String(255))
+    #details = db.Column(db.Text, nullable=True)
+
+    timestamp = db.Column(db.DateTime, default=func.now())
     remote_addr = db.Column(db.String(45), nullable=True)
     response_code = db.Column(db.Integer, nullable=True)
     
@@ -258,6 +267,7 @@ class APIKey(db.Model):
 
     user = db.relationship("User", back_populates="api_keys")
     usage_logs = db.relationship('UsageLog', back_populates='api_key', lazy=True)
+
     prediction_results = db.relationship("PredictionResult", back_populates="api_key", lazy=True, cascade="all, delete-orphan")
     def generate_key(self) -> None:
         self.key_string = str(uuid.uuid4()).replace('-', '')[:32]
@@ -284,11 +294,15 @@ class UsageLog(db.Model):
     request_data_summary = db.Column(db.Text)
     response_status_code = db.Column(db.Integer)
     # (추론 ID)새로 추가될 부분: 어떤 PredictionResult/IrisResult와 관련된 로그인지 저장
-    prediction_result_id = db.Column(db.Integer, db.ForeignKey('iris_results.id'), nullable=True, index=True) # IrisResult 테이블명에 맞게 수정
+
+    # Correct the foreign key and back_populates
+    prediction_result_id = db.Column(db.Integer, db.ForeignKey('prediction_results.id'), nullable=True, index=True)
+    #prediction_result_id = db.Column(db.Integer, db.ForeignKey('iris_results.id'), nullable=True, index=True) # IrisResult 테이블명에 맞게 수정
 
     user = db.relationship('User', back_populates='usage_logs')
     api_key = db.relationship('APIKey', back_populates='usage_logs')
     service = db.relationship('Service', back_populates='usage_logs')
+
     def __repr__(self) -> str:
         return f"<UsageLog(service_id={self.service_id}, usage_type='{self.usage_type}', timestamp={self.timestamp})>"
 
@@ -314,9 +328,11 @@ class PredictionResult(db.Model):
         'polymorphic_on': type,
         'polymorphic_identity': 'prediction_result'
     }
+    # back_populates must match the names in User and Service models
     user = db.relationship("User", back_populates="prediction_results")
     api_key = db.relationship("APIKey", back_populates="prediction_results")
     service = db.relationship('Service', back_populates='prediction_results')
+
     def __repr__(self) -> str:
         return f"<PredictionResult(user_id={self.user_id}, service_id={self.service_id}, predicted_class='{self.predicted_class}')>"
 

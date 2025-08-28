@@ -8,7 +8,9 @@
 
     <div class="card mb-4">
         <div class="card-body">
-            <form method="GET" action="{{ url_for('match.log_list') }}" class="row g-3 align-items-end">
+            <form method="POST" action="{{ url_for('match.log_list') }}" class="row g-3 align-items-end">   
+                {# GET 사용시 아래 {{ form.csrf_token }} 삭제 #}
+                {{ form.csrf_token }}
                 <div class="col-md-5">
                     {{ form.keyword.label(class="form-label") }}
                     {{ form.keyword(class="form-control") }}

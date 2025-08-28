@@ -16,6 +16,8 @@ from apps.dbmodels import Log, User, UserLogType, UserType
 from apps.decorators import admin_required
 from apps.extensions import db
 from werkzeug.security import generate_password_hash # 비밀번호 해싱을 위해 사용
+from .forms import AdminLogSearchForm
+
 def log_action(title, summary, target_user_id=None, status_code=200):
     """관리자 행동을 로그로 기록하는 헬퍼 함수"""
     try:
@@ -266,6 +268,75 @@ def create_user():
             flash(f'사용자 생성 중 오류가 발생했습니다: {e}', 'danger')
     return render_template('admin/create_user.html', title='사용자 생성', form=form)
 
+@admin.route('/logs', methods=['GET', 'POST'])
+@admin_required
+def log_list():
+    PER_PAGE = 10
+    
+    form = AdminLogSearchForm()
+    
+    logs_query = Log.query.options(joinedload(Log.actor))
+    filtered_args = {}
+
+    if form.validate_on_submit():
+        # POST 요청: 폼 데이터를 처리하고 GET 요청으로 리디렉션 (PRG 패턴)
+        filtered_args['keyword'] = form.keyword.data if form.keyword.data else ''
+        filtered_args['log_title'] = form.log_title.data if form.log_title.data else ''
+        filtered_args['start_date'] = form.start_date.data.isoformat() if form.start_date.data else ''
+        filtered_args['end_date'] = form.end_date.data.isoformat() if form.end_date.data else ''
+        return redirect(url_for('admin.log_list', **filtered_args))
+    
+    elif request.method == 'GET':
+        # GET 요청: URL의 쿼리 파라미터로 폼을 채움
+        form = AdminLogSearchForm(request.args)
+        
+    # GET 또는 POST 리디렉션 후 필터링 로직
+    # 폼 데이터가 유효한 경우에만 필터링을 적용
+    if form.keyword.data:
+        keyword = f"%{form.keyword.data}%"
+        logs_query = logs_query.join(User, Log.user_id == User.id, isouter=True).filter(
+            or_(
+                cast(Log.id, String).ilike(keyword),
+                cast(Log.target_user_id, String).ilike(keyword),
+                Log.endpoint.ilike(keyword),
+                Log.log_title.ilike(keyword),
+                Log.log_summary.ilike(keyword),
+                User.username.ilike(keyword)
+            )
+        )
+        filtered_args['keyword'] = form.keyword.data
+
+    if form.log_title.data:
+        logs_query = logs_query.filter(Log.log_title == form.log_title.data)
+        filtered_args['log_title'] = form.log_title.data
+    
+    if form.start_date.data:
+        start_of_day = datetime.combine(form.start_date.data, time.min)
+        logs_query = logs_query.filter(Log.timestamp >= start_of_day)
+        filtered_args['start_date'] = form.start_date.data.isoformat()
+        
+    if form.end_date.data:
+        end_of_day = datetime.combine(form.end_date.data, time.max)
+        logs_query = logs_query.filter(Log.timestamp <= end_of_day)
+        filtered_args['end_date'] = form.end_date.data.isoformat()
+
+    page = request.args.get('page', 1, type=int)
+    logs_pagination = logs_query.order_by(Log.timestamp.desc()).paginate(
+        page=page, 
+        per_page=PER_PAGE, 
+        error_out=False
+    )
+    
+    return render_template(
+        'admin/logs.html',
+        title='로그 조회',
+        form=form,
+        logs=logs_pagination.items,
+        pagination=logs_pagination,
+        filtered_args=filtered_args,
+    )
+
+"""
 @admin.route('/logs', methods=['GET'])
 @admin_required
 def log_list():
@@ -336,7 +407,7 @@ def log_list():
             'end_date': end_date
         }
     )
-
+"""
 @admin.route('/logs/download-csv', methods=['GET'])
 @admin_required
 def logs_download_csv():

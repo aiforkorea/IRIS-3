@@ -1,36 +1,41 @@
 {# apps/admin/templates/admin/logs.html #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_pagination %}
-
 {% block content %}
 <div class="container-fluid">
     <h5 class="mb-1">로그 검색</h5>
     <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center mb-4">
         <div class="card flex-grow-1 me-lg-3 mb-3 mb-lg-0">
             <div class="card-body">
-                <form method="POST" action="{{ url_for('admin.log_list') }}" class="row g-2 align-items-lg-center">
-                    {{ form.csrf_token }} 
+                <form method="GET" action="{{ url_for('admin.log_list') }}" class="row g-2 align-items-lg-center">
                     <div class="col-12 col-md-4 col-lg-4">
-                        {{ form.keyword.label(class="visually-hidden") }}
-                        {{ form.keyword(class="form-control form-control-sm", type="search", placeholder="키워드 입력") }}    {# type="search" #}
+                        <label for="search_query" class="visually-hidden">검색</label>
+                        <input type="search" name="search_query" id="search_query" class="form-control form-control-sm"
+                               placeholder="ID, 대상ID, 로그제목, 엔드포인트, 타이틀, 내용 입력" value="{{ search_params.search_query or '' }}">
                     </div>
                     <div class="col-12 col-md-4 col-lg-2">
-                        {{ form.log_title.label(class="visually-hidden") }}
-                        {{ form.log_title(class="form-select form-select-sm") }}
+                        <label for="log_title_query" class="visually-hidden">로그 제목</label>
+                        <select class="form-select form-select-sm" name="log_title_query" id="log_title_query">
+                            <option value="">모든 제목</option>
+                            {% for type in UserLogType %}
+                            <option value="{{ type.value }}" {% if log_title_query==type.value %}selected{% endif %}>
+                                {{ type.value }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                     <div class="col-12 col-md-2 col-lg-2">
-                        {{ form.start_date.label(class="visually-hidden") }}
-                        {{ form.start_date(class="form-control form-control-sm", type="date") }}
+                        <label for="start_date" class="visually-hidden">시작일</label>
+                        <input type="date" class="form-control form-control-sm" id="start_date" name="start_date" value="{{ search_params.start_date or '' }}">
                     </div>
                     <div class="col-auto d-flex align-items-center">
                         <span class="form-label mb-0">~</span>
                     </div>
                     <div class="col-12 col-md-2 col-lg-2">
-                        {{ form.end_date.label(class="visually-hidden") }}
-                        {{ form.end_date(class="form-control form-control-sm", type="date") }}
+                        <label for="end_date" class="visually-hidden">종료일</label>
+                        <input type="date" class="form-control form-control-sm" id="end_date" name="end_date" value="{{ search_params.end_date or '' }}">
                     </div>
                     <div class="col-12 col-md-1 d-grid col-lg-1">
-                        {{ form.submit(class="btn btn-primary btn-sm") }}
+                        <button type="submit" class="btn btn-primary btn-sm">검색</button>
                     </div>
                 </form>
             </div>
