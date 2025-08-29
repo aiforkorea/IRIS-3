@@ -64,7 +64,7 @@ def match_manager():
     match_search_form.expert_id.choices = [(0, '전체 전문가')] + [(expert.id, expert.username) for expert in experts]
 
     # '신규 매칭' 탭 로직 (검색)
-    new_match_query = User.query.filter(User.user_type == UserType.USER, User.match_status == MatchStatus.UNASSIGNED)
+    new_match_query = User.query.filter(User.user_type == UserType.USER, User.match_status == MatchStatus.UNASSIGNED, User.is_active == True, User.is_deleted == False)
     if request.method == 'POST' and 'search_submit' in request.form:
         if new_match_form.validate_on_submit():
             
@@ -136,7 +136,7 @@ def match_manager():
     matches_history = pagination.items
     print(f"matches_history: {matches_history}")
     # 탭별 항목 수 계산
-    unassigned_matches_count = User.query.filter_by(match_status=MatchStatus.UNASSIGNED, user_type=UserType.USER).count()
+    unassigned_matches_count = User.query.filter(User.user_type == UserType.USER, User.match_status == MatchStatus.UNASSIGNED, User.is_active == True, User.is_deleted == False).count()
     in_progress_matches_count = Match.query.filter(Match.status.in_([MatchStatus.IN_PROGRESS])).count()
     #in_progress_matches_count = Match.query.filter(Match.status.in_([MatchStatus.IN_PROGRESS, MatchStatus.COMPLETED])).count()
 

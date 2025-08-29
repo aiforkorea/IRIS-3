@@ -12,7 +12,7 @@ from wtforms import StringField, PasswordField, SelectField, BooleanField, Submi
 from wtforms.validators import DataRequired, Email, EqualTo, ValidationError
 from apps.admin.forms import CreateUserForm, EditUserForm
 from . import admin
-from apps.dbmodels import Log, Match, MatchLog, MatchStatus, User, UserLogType, UserType
+from apps.dbmodels import Log, Match, MatchLog, MatchLogType, MatchStatus, User, UserLogType, UserType
 from apps.decorators import admin_required
 from apps.extensions import db
 from werkzeug.security import generate_password_hash # 비밀번호 해싱을 위해 사용
@@ -216,6 +216,20 @@ def toggle_user_active(user_id):
         else:
             # If the user is being reactivated, reset their match status to UNASSIGNED.
             user.match_status = MatchStatus.UNASSIGNED
+
+            user_username = user.username
+            log_summary = f"사용자({user_username})({user_id}) 계정 활성화를 통한 매치 준비 완료"
+                        
+            match_log = MatchLog(
+                admin_id=current_user.id,
+                user_id=user_id,
+                expert_id="-",
+                match_id="-",
+                match_status=MatchStatus.UNASSIGNED,
+                log_title=MatchLogType.MATCH_USER_ACCOUNT_ACTIVE.value,
+                log_summary=log_summary
+            )
+            db.session.add(match_log)
 
         log_action(title="계정상태변경", summary=summary, target_user_id=user.id)
         db.session.commit()

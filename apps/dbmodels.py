@@ -57,6 +57,8 @@ class MatchLogType(enum.Enum):  # 매칭 로그 구분
     MATCH_USER_ROLE_CHANGE = "사용자역할변경"   # User에서 expert -> user, user -> expert
     MATCH_USER_ACCOUNT_DELETE = "계정삭제"
     MATCH_USER_ACCOUNT_INACTIVE = "계정비활성화"
+    MATCH_USER_ACCOUNT_ACTIVE = "계정활성화"
+
     
 class User(db.Model, UserMixin):
     __tablename__ = "users"
