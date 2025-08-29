@@ -12,11 +12,70 @@ from wtforms import StringField, PasswordField, SelectField, BooleanField, Submi
 from wtforms.validators import DataRequired, Email, EqualTo, ValidationError
 from apps.admin.forms import CreateUserForm, EditUserForm
 from . import admin
-from apps.dbmodels import Log, User, UserLogType, UserType
+from apps.dbmodels import Log, Match, MatchLog, MatchStatus, User, UserLogType, UserType
 from apps.decorators import admin_required
 from apps.extensions import db
 from werkzeug.security import generate_password_hash # 비밀번호 해싱을 위해 사용
 from .forms import AdminLogSearchForm
+
+# [추가] MatchLog 기록을 위한 헬퍼 함수
+def log_match_action(admin_id, match_id, user_id, expert_id, status, title, summary):
+    log = MatchLog(
+        admin_id=admin_id,
+        match_id=match_id,
+        user_id=user_id,
+        expert_id=expert_id,
+        match_status=status,
+        log_title=title,
+        log_summary=summary,
+        timestamp=datetime.now(),
+        remote_addr=request.remote_addr
+    )
+    db.session.add(log)
+
+# [추가] 진행 중인 매치를 취소하고 로그를 기록하는 헬퍼 함수
+def cancel_active_matches(user, admin_user, reason_title, reason_summary):
+    user.match_status = MatchStatus.UNASSIGNED
+    # 'IN_PROGRESS' 상태인 매치만 조회
+    if user.is_user():
+        matches = user.matches_as_user.filter(Match.status == MatchStatus.IN_PROGRESS).all()
+        for match in matches:
+            match.status = MatchStatus.CANCELLED
+            match.closed_at = datetime.now()
+            # MatchLog 기록
+            log_match_action(
+                admin_id=admin_user.id,
+                match_id=match.id,
+                user_id=match.user_id,
+                expert_id=match.expert_id,
+                status=MatchStatus.CANCELLED,
+                title=reason_title,
+                summary=f"일반사용자({user.username})의 {reason_summary}으로 매치 취소: {reason_summary}"
+            )
+            
+    elif user.is_expert():
+        matches = user.matches_as_expert.filter(Match.status == MatchStatus.IN_PROGRESS).all()
+        for match in matches:
+            match.status = MatchStatus.CANCELLED
+            match.closed_at = datetime.now()
+
+            # Change the match_status of the 'user' in the match to UNASSIGNED
+            # by accessing the user object through the 'match' relationship.
+            matched_user = match.user
+            if matched_user:
+                matched_user.match_status = MatchStatus.UNASSIGNED
+                db.session.add(matched_user)
+
+            # MatchLog 기록
+            log_match_action(
+                admin_id=admin_user.id,
+                match_id=match.id,
+                user_id=match.user_id,
+                expert_id=match.expert_id,
+                status=MatchStatus.CANCELLED,
+                title=reason_title,
+                summary=f"전문가({user.username})의 {reason_summary}으로 매치 취소"
+            )
 
 def log_action(title, summary, target_user_id=None, status_code=200):
     """관리자 행동을 로그로 기록하는 헬퍼 함수"""
@@ -34,6 +93,7 @@ def log_action(title, summary, target_user_id=None, status_code=200):
     except Exception as e:
         # 로깅 실패가 주 작업에 영향을 주지 않도록 처리
         print(f"로깅 실패: {e}")
+
 @admin.route('/dashboard')
 @admin_required
 def dashboard():
@@ -139,21 +199,28 @@ def users():
 @admin.route('/users/<string:user_id>/toggle_active', methods=['POST'])
 @admin_required
 def toggle_user_active(user_id):
-    # [수정]     user = User.query.get_or_404(user_id)의 get_or_404를 filter_by와 first_or_404로 변경하여 삭제된 사용자는 조회되지 않게 함
     user = User.query.filter_by(id=user_id, is_deleted=False).first_or_404()
-
     if user.id == current_user.id:
         flash('자신의 계정 상태는 변경할 수 없습니다.', 'warning')
         return redirect(url_for('admin.users'))
+
     try:
         user.is_active = not user.is_active
         action = "활성" if user.is_active else "비활성"
-        #summary = f"'{user.username}'(ID:{user.id}) 계정을 {action} 상태로 변경."
         summary = f"'{user.username}' 계정을 {action} 상태로 변경."
-        log_action(title="계정상태변경", summary=summary, target_user_id=user.id)
+        
+        # [수정] 사용자가 비활성화될 경우 매치 취소 로직 추가
+        if not user.is_active:
+            # If the user is being deactivated, cancel any active matches.
+            cancel_active_matches(user, current_user, "계정 비활성화", f"계정 비활성화")
+        else:
+            # If the user is being reactivated, reset their match status to UNASSIGNED.
+            user.match_status = MatchStatus.UNASSIGNED
 
+        log_action(title="계정상태변경", summary=summary, target_user_id=user.id)
         db.session.commit()
         flash(f'{user.username} 계정 상태가 {action}으로 변경되었습니다.', 'success')
+        
     except Exception as e:
         db.session.rollback()
         flash(f'계정 상태 변경 중 오류 발생: {e}', 'danger')
@@ -161,23 +228,44 @@ def toggle_user_active(user_id):
 @admin.route('/user_type_change/<string:user_id>', methods=['POST'])
 @admin_required
 def user_type_change(user_id):
-    # user = User.query.get_or_404(user_id)의 get_or_404를 filter_by와 first_or_404로 변경
-    # 1. 레코드 조회 
     user = User.query.filter_by(id=user_id, is_deleted=False).first_or_404()
-    print(f"user: {user}")   # log 사용
     if user.id == current_user.id:
         flash('자신의 관리자 권한은 변경할 수 없습니다.', 'warning')
         return redirect(url_for('admin.users'))
     new_user_type_str = request.form.get('user_type')
     if new_user_type_str in [e.value for e in UserType]:
         try:
-            original_type = user.user_type.value
-            user.user_type = UserType(new_user_type_str)
-            #summary = f"'{user.username}'(ID:{user.id}) 역할을 '{original_type}'에서 '{new_user_type_str}'(으)로 변경."
-            summary = f"'{user.username}' 역할을 '{original_type}'에서 '{new_user_type_str}'(으)로 변경."
-            log_action(title="사용자역할변경", summary=summary, target_user_id=user.id)
+            original_type = user.user_type
+            new_type = UserType(new_user_type_str)
+
+            # [수정] 역할 변경에 따른 매치 취소 로직을 먼저!
+            if original_type != new_type:
+                # 일반 사용자 -> 전문가
+                if original_type == UserType.USER and new_type == UserType.EXPERT:
+                    cancel_active_matches(
+                        user, current_user,
+                        reason_title="사용자 역할 변경",
+                        reason_summary="일반사용자에서 전문가로 역할변경"
+                    )
+                # 전문가 -> 일반 사용자
+                elif original_type == UserType.EXPERT and new_type == UserType.USER:
+                    cancel_active_matches(
+                        user, current_user,
+                        reason_title="사용자 역할 변경",
+                        reason_summary="전문가에서 일반사용자로 역할변경"
+                    )
+
+            # 역할 실제 변경!
+            user.user_type = new_type
+
+            summary = f"'{user.username}' 역할을 '{original_type.value}'에서 '{new_user_type_str}'(으)로 변경."
+            log_action(
+                title="사용자역할변경",
+                summary=summary,
+                target_user_id=user.id
+            )
             db.session.commit()
-            flash(f'사용자 역할 변경이 성공적으로 처리되었습니다.', 'success')
+            flash('사용자 역할 변경이 성공적으로 처리되었습니다.', 'success')
         except Exception as e:
             db.session.rollback()
             flash(f'처리 중 오류가 발생했습니다: {e}', 'danger')
@@ -216,29 +304,32 @@ def edit_user(user_id):
 @admin.route('/users/<string:user_id>/delete', methods=['POST'])
 @admin_required
 def delete_user(user_id):
-    # [수정] user = User.query.get_or_404(user_id)의 get_or_404를 filter_by와 first_or_404로 변경
     user = User.query.filter_by(id=user_id, is_deleted=False).first_or_404()
     if user.id == current_user.id:
         flash('자신의 계정은 삭제할 수 없습니다.', 'warning')
         return redirect(url_for('admin.users', **request.args))
-    # 이미 삭제된 사용자인지 확인
+        
     if user.is_deleted:
         flash(f'이미 삭제된 사용자입니다.', 'info')
         return redirect(url_for('admin.users', **request.args))
+        
     try:
-        # User 모델에 정의된 soft_delete 메서드 호출 (아래 추가 제안 참조)
-        # 이 메서드가 없다면 AttributeError가 발생합니다.
-        user.soft_delete() 
+        user.soft_delete()
+        # [수정] 사용자가 삭제될 경우 매치 취소 로직 추가
+        cancel_active_matches(user, current_user, "계정 삭제", "계정 삭제")
+        
         summary = f"'{user.username}' 계정을 삭제 처리."
         log_action(title="사용자삭제", summary=summary, target_user_id=user.id)
         db.session.commit()
         flash(f'{user.username} 계정이 성공적으로 삭제 처리되었습니다.', 'success')
+        
     except AttributeError:
         db.session.rollback()
         flash(f'soft_delete 메서드가 User 모델에 정의되지 않았습니다.', 'danger')
     except Exception as e:
         db.session.rollback()
         flash(f'사용자 삭제 중 오류가 발생했습니다: {e}', 'danger')
+        
     return redirect(url_for('admin.users', **request.args))
 
 @admin.route('/users/create', methods=['GET', 'POST'])

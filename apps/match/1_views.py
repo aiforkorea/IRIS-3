@@ -19,10 +19,10 @@ from . import match  # Blueprint 정의
 def match_manager():
     # 매칭보내기 
     unassigned_matches = User.query.filter_by(match_status='UNASSIGNED',user_type='USER').order_by(User.created_at.desc()).all()
-    completed_matches = Match.query.filter_by(status='IN_PROGRESS').order_by(Match.created_at.desc()).all() # 추후 COMPLETED로 교체
+    in_progress_matches = Match.query.filter_by(status='IN_PROGRESS').order_by(Match.created_at.desc()).all() # 
 
     #print(unassigned_matches)
-    #print(completed_matches)
+    #print(in_progress_matches)
     new_match_form = NewMatchForm()
     match_search_form = MatchSearchForm()
 
@@ -88,7 +88,7 @@ def match_manager():
         matches_history=matches_history,
         pagination=pagination,
         unassigned_matches=unassigned_matches,
-        completed_matches=completed_matches,
+        in_progress_matches=in_progress_matches,
     )
 
 @match.route('/new', methods=['POST'])

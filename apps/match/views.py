@@ -102,8 +102,8 @@ def match_manager():
     matches_query = db.session.query(Match).join(User, Match.user_id == User.id).outerjoin(expert_alias, Match.expert_id == expert_alias.id)
     print(f"매치 관리 유저 쿼리: {matches_query}")
 
-    # --- MatchStatus.COMPLETED 상태만 가져오도록 필터 추가 ---
-    matches_query = matches_query.filter(Match.status == MatchStatus.COMPLETED)
+    # --- MatchStatus.IN_PROGRESS 상태만 가져오도록 필터 추가 ---
+    matches_query = matches_query.filter(Match.status == MatchStatus.IN_PROGRESS)
      
     # filtered_args 딕셔너리 초기화
     filtered_args = {}
@@ -137,14 +137,15 @@ def match_manager():
     print(f"matches_history: {matches_history}")
     # 탭별 항목 수 계산
     unassigned_matches_count = User.query.filter_by(match_status=MatchStatus.UNASSIGNED, user_type=UserType.USER).count()
-    completed_matches_count = Match.query.filter(Match.status.in_([MatchStatus.IN_PROGRESS, MatchStatus.COMPLETED])).count()
+    in_progress_matches_count = Match.query.filter(Match.status.in_([MatchStatus.IN_PROGRESS])).count()
+    #in_progress_matches_count = Match.query.filter(Match.status.in_([MatchStatus.IN_PROGRESS, MatchStatus.COMPLETED])).count()
 
 
     print(f"new_match_form: {new_match_form}")
     print(f"신규 매칭 유저: {users_to_match}")
     print(f"matches_history: {matches_history}")
     print(f"unassigned_matches_count: {unassigned_matches_count}")
-    print(f"completed_matches_count: {completed_matches_count}")
+    print(f"in_progress_matches_count: {in_progress_matches_count}")
 
     return render_template(
         'match/match_manager.html',
@@ -154,7 +155,7 @@ def match_manager():
         matches_history=matches_history,
         pagination=pagination,
         unassigned_matches_count=unassigned_matches_count,
-        completed_matches_count=completed_matches_count,
+        in_progress_matches_count=in_progress_matches_count,
         filtered_args=filtered_args,
     )
 
@@ -190,12 +191,12 @@ def create_new_match():
                 for user_id in user_ids:
                     user_to_match = User.query.get(user_id)
                     if user_to_match and user_to_match.match_status == MatchStatus.UNASSIGNED:
-                        new_match = Match(user_id=user_id, expert_id=expert_id, status=MatchStatus.COMPLETED)  # IN_PROCESS
+                        new_match = Match(user_id=user_id, expert_id=expert_id, status=MatchStatus.IN_PROGRESS)  # IN_PROGRESS
                         db.session.add(new_match)
                         
                         db.session.flush()
 
-                        user_to_match.match_status = MatchStatus.COMPLETED
+                        user_to_match.match_status = MatchStatus.IN_PROGRESS
                         print(f'("user_id",user_id)')
                         user_username = user_to_match.username
                         log_summary = f"신규 매칭 생성: 사용자({user_username})({user_id}) - 전문가({expert_username})({expert_id})"
@@ -205,7 +206,7 @@ def create_new_match():
                             user_id=user_id,
                             expert_id=expert_id,
                             match_id=new_match.id,
-                            match_status=MatchStatus.COMPLETED,
+                            match_status=MatchStatus.IN_PROGRESS,
                             log_title=MatchLogType.MATCH_CREATE.value,
                             log_summary=log_summary
                         )
@@ -278,7 +279,7 @@ def batch_update_matches():
  
             for match_id in match_ids:
                 match_to_update = Match.query.get(match_id)
-                if match_to_update and match_to_update.status == MatchStatus.COMPLETED:
+                if match_to_update and match_to_update.status == MatchStatus.IN_PROGRESS:
                     original_expert_id = match_to_update.expert_id
                     original_expert_user = User.query.get(match_to_update.expert_id)
                     original_expert_username = original_expert_user.username if original_expert_user else "알 수 없는 전문가"
@@ -293,7 +294,7 @@ def batch_update_matches():
                         user_id=match_to_update.user_id,
                         expert_id=new_expert_id,
                         match_id=match_id,
-                        match_status=MatchStatus.COMPLETED,
+                        match_status=MatchStatus.IN_PROGRESS,
                         log_title=MatchLogType.MATCH_EXPERT_CHANGE.value,
                         log_summary=log_summary
                     )
