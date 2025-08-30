@@ -53,7 +53,6 @@ class LogSearchForm(FlaskForm):
 class AdminLogSearchForm(FlaskForm):
     """관리자 로그 검색을 위한 폼"""
     keyword = StringField('키워드', render_kw={"placeholder": "user ID, expert ID, 로그타이틀, 내용 등"})
-    # coerce=str을 추가하여 빈 문자열을 허용
     log_title = SelectField("로그 제목", choices=[('', '모든 제목')] + [(type.value, type.value) for type in MatchLogType], coerce=str)
     start_date = DateField("시작일", format='%Y-%m-%d', validators=[Optional()])
     end_date = DateField("종료일", format='%Y-%m-%d', validators=[Optional()])

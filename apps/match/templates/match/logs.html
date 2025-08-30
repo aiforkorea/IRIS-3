@@ -1,4 +1,4 @@
-{# apps/log/templates/log/logs.html #}
+{# apps/match/templates/match/logs.html #}
 {% extends "base.html" %}
 {% from "_macros.html" import render_pagination %}
 
@@ -9,7 +9,7 @@
         <div class="card flex-grow-1 me-lg-3 mb-3 mb-lg-0">
             <div class="card-body">
                 <form method="POST" action="{{ url_for('match.log_list') }}" class="row g-2 align-items-lg-center">
-                    {{ form.csrf_token }} 
+                    {{ form.hidden_tag() }}
                     <div class="col-12 col-md-4 col-lg-4">
                         {{ form.keyword.label(class="visually-hidden") }}
                         {{ form.keyword(class="form-control form-control-sm", type="search", placeholder="사용자/전문가 ID, 로그 제목, 내용 등") }}

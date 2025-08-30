@@ -360,34 +360,29 @@ def batch_update_matches():
 @login_required
 @admin_required
 def log_list():
-    """매칭 로그를 검색하고 목록을 보여주는 페이지"""
     PER_PAGE = 10
-    
-    form = AdminLogSearchForm()
-    
-    # 기본 쿼리: MatchLog와 관련된 사용자 정보를 모두 join
+    filtered_args = {}
+
+    # POST 요청시 request.form 사용!
+    if request.method == 'POST':
+        form = AdminLogSearchForm(request.form)  # 항상 request.form!
+        if form.validate_on_submit():
+            filtered_args['keyword'] = form.keyword.data or ''
+            filtered_args['log_title'] = form.log_title.data or ''
+            filtered_args['start_date'] = form.start_date.data.isoformat() if form.start_date.data else ''
+            filtered_args['end_date'] = form.end_date.data.isoformat() if form.end_date.data else ''
+            return redirect(url_for('match.log_list', **filtered_args))
+        # 폼 검증 에러 시 나중에 render_template에서 에러 메시지 출력 가능
+    else:
+        # GET 요청시 쿼리스트링 바인딩
+        form = AdminLogSearchForm(request.args)
+
     logs_query = MatchLog.query.options(
         joinedload(MatchLog.admin),
         joinedload(MatchLog.user),
         joinedload(MatchLog.expert)
     )
-    
-    filtered_args = {}
 
-    if form.validate_on_submit():
-        # POST 요청: 폼 데이터를 처리하고 GET 요청으로 리디렉션 (PRG 패턴)
-        filtered_args['keyword'] = form.keyword.data if form.keyword.data else ''
-        filtered_args['log_title'] = form.log_title.data if form.log_title.data else ''
-        filtered_args['start_date'] = form.start_date.data.isoformat() if form.start_date.data else ''
-        filtered_args['end_date'] = form.end_date.data.isoformat() if form.end_date.data else ''
-        return redirect(url_for('match.log_list', **filtered_args))
-    
-    elif request.method == 'GET':
-        # GET 요청: URL의 쿼리 파라미터로 폼을 채움
-        form = AdminLogSearchForm(request.args)
-    
-    # GET 또는 POST 리디렉션 후 필터링 로직
-    # 폼 데이터가 유효한 경우에만 필터링을 적용
     if form.keyword.data:
         keyword = f"%{form.keyword.data}%"
         logs_query = logs_query.filter(
@@ -399,28 +394,25 @@ def log_list():
             )
         )
         filtered_args['keyword'] = form.keyword.data
-
     if form.log_title.data:
         logs_query = logs_query.filter(MatchLog.log_title == form.log_title.data)
         filtered_args['log_title'] = form.log_title.data
-    
     if form.start_date.data:
         start_of_day = datetime.combine(form.start_date.data, time.min)
         logs_query = logs_query.filter(MatchLog.timestamp >= start_of_day)
         filtered_args['start_date'] = form.start_date.data.isoformat()
-        
     if form.end_date.data:
         end_of_day = datetime.combine(form.end_date.data, time.max)
         logs_query = logs_query.filter(MatchLog.timestamp <= end_of_day)
         filtered_args['end_date'] = form.end_date.data.isoformat()
-    
+
     page = request.args.get('page', 1, type=int)
     logs_pagination = logs_query.order_by(MatchLog.timestamp.desc()).paginate(
-        page=page, 
-        per_page=PER_PAGE, 
+        page=page,
+        per_page=PER_PAGE,
         error_out=False
     )
-    
+
     return render_template(
         'match/logs.html',
         title='매칭 로그 조회',
