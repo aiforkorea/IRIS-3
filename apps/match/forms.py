@@ -22,8 +22,10 @@ class NewMatchForm(FlaskForm):
 
 # 수정된 MatchSearchForm 클래스
 class MatchSearchForm(FlaskForm):
-    user_id = StringField("사용자 ID")
-    expert_id = StringField("전문가 ID")
+    #user_id = StringField("사용자 ID")
+    #expert_id = StringField("전문가 ID")
+    keyword = StringField('키워드', render_kw={"placeholder": "ID, 사용자/전문가 ID, 이메일 등"}) # 새롭게 추가
+
     status = SelectField(
         "상태",
         choices=[],

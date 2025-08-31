@@ -61,7 +61,7 @@ def match_manager():
     match_search_form.batch_expert_id.choices = expert_choices
     
     # '매칭 관리' 탭에서 사용할 전문가 드롭다운 목록
-    match_search_form.expert_id.choices = [(0, '전체 전문가')] + [(expert.id, expert.username) for expert in experts]
+    #match_search_form.expert_id.choices = [(0, '전체 전문가')] + [(expert.id, expert.username) for expert in experts]
 
     # '신규 매칭' 탭 로직 (검색)
     new_match_query = User.query.filter(User.user_type == UserType.USER, User.match_status == MatchStatus.UNASSIGNED, User.is_active == True, User.is_deleted == False)
@@ -108,20 +108,26 @@ def match_manager():
     # filtered_args 딕셔너리 초기화
     filtered_args = {}
 
-    # GET 요청의 URL 파라미터로 검색 조건 반영
-    user_id_query = request.args.get('user_id', type=int)
-    expert_id_query = request.args.get('expert_id', type=int)
+    # GET 요청의 URL 파라미터로 검색 조건 반영 (keyword 필드 사용하도록 수정)
+    keyword_query = request.args.get('keyword', type=str)
     status_query = request.args.get('status', 'all', type=str)
     start_date_query = request.args.get('start_date', type=datetime.date.fromisoformat if request.args.get('start_date') else None)
     end_date_query = request.args.get('end_date', type=datetime.date.fromisoformat if request.args.get('end_date') else None)
-    
+
     # 필터 적용
-    if user_id_query:
-        matches_query = matches_query.filter(Match.user_id == user_id_query)
-        filtered_args['user_id'] = user_id_query
-    if expert_id_query and expert_id_query != 0:
-        matches_query = matches_query.filter(Match.expert_id == expert_id_query)
-        filtered_args['expert_id'] = expert_id_query
+    if keyword_query:
+        matches_query = matches_query.filter(
+            or_(
+                cast(Match.user_id, String).ilike(f'%{keyword_query}%'),
+                cast(Match.expert_id, String).ilike(f'%{keyword_query}%'),
+                User.username.ilike(f'%{keyword_query}%'),
+                expert_alias.username.ilike(f'%{keyword_query}%'),
+                User.email.ilike(f'%{keyword_query}%'),
+                expert_alias.email.ilike(f'%{keyword_query}%')
+            )
+        )
+        filtered_args['keyword'] = keyword_query
+
     if status_query and status_query != 'all':
         matches_query = matches_query.filter(Match.status == MatchStatus(status_query))
         filtered_args['status'] = status_query
@@ -146,6 +152,12 @@ def match_manager():
     print(f"matches_history: {matches_history}")
     print(f"unassigned_matches_count: {unassigned_matches_count}")
     print(f"in_progress_matches_count: {in_progress_matches_count}")
+
+    # 폼 객체에 GET 요청 데이터 바인딩
+    match_search_form.process(request.args)
+    # 폼의 status.choices와 batch_expert_id.choices는 템플릿 렌더링 전에 다시 설정해주어야 합니다.
+    match_search_form.status.choices = [('all', '모두')] + [(s.name, s.value) for s in MatchStatus]
+    match_search_form.batch_expert_id.choices = expert_choices
 
     return render_template(
         'match/match_manager.html',
