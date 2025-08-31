@@ -212,7 +212,7 @@ def toggle_user_active(user_id):
         # [수정] 사용자가 비활성화될 경우 매치 취소 로직 추가
         if not user.is_active:
             # If the user is being deactivated, cancel any active matches.
-            cancel_active_matches(user, current_user, "계정 비활성화", f"계정 비활성화")
+            cancel_active_matches(user, current_user, "계정비활성화", f"계정비활성화")
         else:
             # If the user is being reactivated, reset their match status to UNASSIGNED.
             user.match_status = MatchStatus.UNASSIGNED
@@ -258,14 +258,14 @@ def user_type_change(user_id):
                 if original_type == UserType.USER and new_type == UserType.EXPERT:
                     cancel_active_matches(
                         user, current_user,
-                        reason_title="사용자 역할 변경",
+                        reason_title="사용자역할변경",
                         reason_summary="일반사용자에서 전문가로 역할변경"
                     )
                 # 전문가 -> 일반 사용자
                 elif original_type == UserType.EXPERT and new_type == UserType.USER:
                     cancel_active_matches(
                         user, current_user,
-                        reason_title="사용자 역할 변경",
+                        reason_title="사용자역할변경",
                         reason_summary="전문가에서 일반사용자로 역할변경"
                     )
 
@@ -279,7 +279,7 @@ def user_type_change(user_id):
                 target_user_id=user.id
             )
             db.session.commit()
-            flash('사용자 역할 변경이 성공적으로 처리되었습니다.', 'success')
+            flash('사용자역할변경이 성공적으로 처리되었습니다.', 'success')
         except Exception as e:
             db.session.rollback()
             flash(f'처리 중 오류가 발생했습니다: {e}', 'danger')
@@ -330,7 +330,7 @@ def delete_user(user_id):
     try:
         user.soft_delete()
         # [수정] 사용자가 삭제될 경우 매치 취소 로직 추가
-        cancel_active_matches(user, current_user, "계정 삭제", "계정 삭제")
+        cancel_active_matches(user, current_user, "계정삭제", "계정삭제")
         
         summary = f"'{user.username}' 계정을 삭제 처리."
         log_action(title="사용자삭제", summary=summary, target_user_id=user.id)

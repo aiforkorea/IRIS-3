@@ -357,25 +357,33 @@ def batch_update_matches():
     return redirect(url_for('match.match_manager'))
 
 @match.route('/logs', methods=['GET', 'POST'])
-@login_required
 @admin_required
 def log_list():
     PER_PAGE = 10
+    
+    # GET/POST 요청 모두 request.form 또는 request.args로 폼 데이터를 바인딩합니다.
+    # POST 요청은 request.form, GET 요청은 request.args에 데이터가 있습니다.
+    form = AdminLogSearchForm(request.form if request.method == 'POST' else request.args)
+    
     filtered_args = {}
-
-    # POST 요청시 request.form 사용!
-    if request.method == 'POST':
-        form = AdminLogSearchForm(request.form)  # 항상 request.form!
-        if form.validate_on_submit():
-            filtered_args['keyword'] = form.keyword.data or ''
-            filtered_args['log_title'] = form.log_title.data or ''
-            filtered_args['start_date'] = form.start_date.data.isoformat() if form.start_date.data else ''
-            filtered_args['end_date'] = form.end_date.data.isoformat() if form.end_date.data else ''
+    
+    # 폼 유효성 검사 및 데이터 추출 (GET/POST 공통 로직)
+    # POST 요청일 때는 form.validate_on_submit()으로 유효성 검사
+    # GET 요청일 때는 폼에 바인딩된 데이터만 추출
+    if form.validate() or request.method == 'GET':
+        if form.keyword.data:
+            filtered_args['keyword'] = form.keyword.data
+        if form.log_title.data:
+            filtered_args['log_title'] = form.log_title.data
+        if form.start_date.data:
+            filtered_args['start_date'] = form.start_date.data.isoformat()
+        if form.end_date.data:
+            filtered_args['end_date'] = form.end_date.data.isoformat()
+    
+        # POST 요청일 때만 리디렉션
+        if request.method == 'POST':
+            # GET 요청으로 필터링 인자를 전달하여 URL을 깨끗하게 유지
             return redirect(url_for('match.log_list', **filtered_args))
-        # 폼 검증 에러 시 나중에 render_template에서 에러 메시지 출력 가능
-    else:
-        # GET 요청시 쿼리스트링 바인딩
-        form = AdminLogSearchForm(request.args)
 
     logs_query = MatchLog.query.options(
         joinedload(MatchLog.admin),
@@ -383,6 +391,7 @@ def log_list():
         joinedload(MatchLog.expert)
     )
 
+    # 폼 데이터에 따라 쿼리 필터링
     if form.keyword.data:
         keyword = f"%{form.keyword.data}%"
         logs_query = logs_query.filter(
@@ -393,18 +402,14 @@ def log_list():
                 MatchLog.log_summary.ilike(keyword)
             )
         )
-        filtered_args['keyword'] = form.keyword.data
     if form.log_title.data:
         logs_query = logs_query.filter(MatchLog.log_title == form.log_title.data)
-        filtered_args['log_title'] = form.log_title.data
     if form.start_date.data:
         start_of_day = datetime.combine(form.start_date.data, time.min)
         logs_query = logs_query.filter(MatchLog.timestamp >= start_of_day)
-        filtered_args['start_date'] = form.start_date.data.isoformat()
     if form.end_date.data:
         end_of_day = datetime.combine(form.end_date.data, time.max)
         logs_query = logs_query.filter(MatchLog.timestamp <= end_of_day)
-        filtered_args['end_date'] = form.end_date.data.isoformat()
 
     page = request.args.get('page', 1, type=int)
     logs_pagination = logs_query.order_by(MatchLog.timestamp.desc()).paginate(
@@ -412,7 +417,9 @@ def log_list():
         per_page=PER_PAGE,
         error_out=False
     )
-
+    
+    # GET 요청으로 들어올 때 form.data는 None이므로, 쿼리스트링에서 form을 다시 바인딩해야 합니다.
+    # 이 부분은 이미 위에서 처리하고 있으므로, render_template에 올바른 form 객체만 넘기면 됩니다.
     return render_template(
         'match/logs.html',
         title='매칭 로그 조회',
@@ -421,7 +428,6 @@ def log_list():
         pagination=logs_pagination,
         filtered_args=filtered_args,
     )
-
 @match.route('/logs/download-csv')
 @login_required
 @admin_required
