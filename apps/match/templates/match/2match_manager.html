@@ -6,35 +6,33 @@
 <div class="container mt-4">
     <h2 class="mb-4">매칭 관리 페이지</h2>
 
-    <ul class="nav nav-tabs" id="matchTabs" role="tablist">
-        <li class="nav-item" role="presentation">
-            <a 
-                class="nav-link {% if request.args.get('search_type', 'new') == 'new' %}active{% endif %}" 
-                id="new-match-tab"
-                href="{{ url_for('match.match_manager', search_type='new') }}"
-                role="tab"
-                aria-controls="new-match"
-                aria-selected="true"
-            >
-                신규 매칭 ({{ new_match_pagination.total }})
-            </a>
-        </li>
-        <li class="nav-item" role="presentation">
-            <a 
-                class="nav-link {% if request.args.get('search_type') == 'manage' %}active{% endif %}" 
-                id="manage-match-tab"
-                href="{{ url_for('match.match_manager', search_type='manage', status='IN_PROGRESS') }}"
-                role="tab"
-                aria-controls="manage-match"
-                aria-selected="false"
-            >
-                매칭 관리 ({{ pagination.total }})
-            </a>
-        </li>
-    </ul>
-
+<ul class="nav nav-tabs" id="matchTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <a 
+            class="nav-link {% if request.args.get('search_type', 'new') == 'new' %}active{% endif %}" 
+            id="new-match-tab"
+            href="{{ url_for('match.match_manager', search_type='new') }}"
+            role="tab"
+            aria-controls="new-match"
+            aria-selected="true"
+        >
+            신규 매칭 ({{ unassigned_matches_count }})
+        </a>
+    </li>
+    <li class="nav-item" role="presentation">
+        <a 
+            class="nav-link {% if request.args.get('search_type') == 'manage' %}active{% endif %}" 
+            id="manage-match-tab"
+            href="{{ url_for('match.match_manager', search_type='manage', status='IN_PROGRESS') }}"
+            role="tab"
+            aria-controls="manage-match"
+            aria-selected="false"
+        >
+            매칭 관리 ({{ pagination.total }})
+        </a>
+    </li>
+</ul>
     <div class="tab-content" id="matchTabsContent">
-        <!-- 신규 매칭 탭 -->
         <div class="tab-pane fade {% if request.args.get('search_type', 'new') == 'new' %}show active{% endif %}" id="new-match" role="tabpanel" aria-labelledby="new-match-tab">
             <div class="card my-3">
                 <div class="card-header">
@@ -43,8 +41,7 @@
                 <div class="card-body">
                     <form method="GET" action="{{ url_for('match.match_manager') }}" class="row g-2 align-items-end">
                         {{ new_match_form.csrf_token }}
-                        <input type="hidden" name="search_type" value="new">
-                        <div class="col-12 col-md-4 col-lg-4">
+                        <input type="hidden" name="search_type" value="new">  <div class="col-12 col-md-4 col-lg-4">
                             {{ new_match_form.keyword.label(class="form-label visually-hidden") }}
                             {{ new_match_form.keyword(class="form-control form-control-sm", type="search", placeholder="ID, 사용자명, 이메일 등") }}
                         </div>
@@ -69,7 +66,7 @@
             <form method="POST" action="{{ url_for('match.create_new_match') }}">
                 {{ new_match_form.csrf_token }}
                 <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="mb-0">매칭 대기 사용자 목록 ({{ new_match_pagination.total }}명)</h5>
+                    <h5 class="mb-0">매칭 대기 사용자 목록 ({{ users_to_match|length }}명)</h5>
                     <div class="d-flex align-items-center gap-2">
                         {{ new_match_form.expert_id(class="form-select form-select-sm") }}
                         <button type="submit" name="assign_submit" class="btn btn-success btn-sm" style="width: auto; min-width: 100px;">매칭 생성</button>
@@ -107,15 +104,9 @@
                         </tbody>
                     </table>
                 </div>
-                {% if new_match_pagination.pages > 1 %}
-<div class="card-footer">
-    {{ render_pagination(new_match_pagination, 'match.match_manager', filtered_args_new, 'new_page') }}
-</div>
-                {% endif %}
             </form>
         </div>
 
-        <!-- 기존 매칭 관리 탭 -->
         <div class="tab-pane fade {% if request.args.get('search_type') == 'manage' %}show active{% endif %}" id="manage-match" role="tabpanel" aria-labelledby="manage-match-tab">
             <div class="card my-3">
                 <div class="card-header">
@@ -124,8 +115,7 @@
                 <div class="card-body">
                     <form method="GET" action="{{ url_for('match.match_manager') }}" class="row g-2 align-items-end">
                         {{ match_search_form.csrf_token }}
-                        <input type="hidden" name="search_type" value="manage">
-                        <div class="col-12 col-md-3 col-lg-3">
+                        <input type="hidden" name="search_type" value="manage"> <div class="col-12 col-md-3 col-lg-3">
                             {{ match_search_form.keyword.label(class="form-label visually-hidden") }}
                             {{ match_search_form.keyword(class="form-control form-control-sm", type="search", placeholder="ID, 사용자/전문가 ID, 이메일 등") }}
                         </div>
@@ -153,10 +143,12 @@
 
             <form method="POST" action="{{ url_for('match.batch_update_matches') }}">
                 {{ match_search_form.csrf_token }}
-                <input type="hidden" name="keyword" value="{{ request.args.get('keyword', '') }}">
-                <input type="hidden" name="status" value="{{ request.args.get('status', status_query) }}">
-                <input type="hidden" name="start_date" value="{{ request.args.get('start_date', '') }}">
-                <input type="hidden" name="end_date" value="{{ request.args.get('end_date', '') }}">
+        {# --- 추가된 부분 --- #}
+        <input type="hidden" name="keyword" value="{{ request.args.get('keyword', '') }}">
+        <input type="hidden" name="status" value="{{ request.args.get('status', status_query) }}">
+        <input type="hidden" name="start_date" value="{{ request.args.get('start_date', '') }}">
+        <input type="hidden" name="end_date" value="{{ request.args.get('end_date', '') }}">
+        {# --- 추가 끝 --- #}
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5 class="mb-0">전체 매칭 기록</h5>
                     <div class="d-flex align-items-center gap-2">
@@ -181,11 +173,13 @@
                         <tbody>
                             {% for match in matches_history %}
                             <tr>
-                                <td>
-                                    {% if match.status.name == 'IN_PROGRESS' %}
-                                    <input type="checkbox" name="match_ids" value="{{ match.id }}" class="match-checkbox">
-                                    {% endif %}
-                                </td>
+        <td>
+            {# --- 수정된 부분 --- #}
+            {% if match.status.name == 'IN_PROGRESS' %}
+            <input type="checkbox" name="match_ids" value="{{ match.id }}" class="match-checkbox">
+            {% endif %}
+            {# --- 수정 끝 --- #}
+        </td>
                                 <td>{{ match.id }}</td>
                                 <td><a href="#">{{ match.user.email }}</a></td>
                                 <td><a href="#">{{ match.expert.email if match.expert else 'N/A' }}</a></td>
@@ -203,9 +197,9 @@
                 </div>
             </form>
             {% if pagination %}
-<div class="card-footer">
-    {{ render_pagination(pagination, 'match.match_manager', filtered_args, 'page') }}
-</div>
+            <div class="card-footer">
+                {{ render_pagination(pagination, 'match.match_manager', filtered_args) }}
+            </div>
             {% endif %}
         </div>
     </div>

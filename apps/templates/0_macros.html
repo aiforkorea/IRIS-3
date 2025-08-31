@@ -1,12 +1,10 @@
 {# apps/templates/_macros.html #}
-{% macro render_pagination(pagination, endpoint, filtered_args, page_arg) %}
+{% macro render_pagination(pagination, endpoint, filtered_args={}) %}
 <nav aria-label="Page navigation">
     <ul class="pagination justify-content-center">
         {# 이전 페이지 링크 #}
         <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
-            {% set args_prev = filtered_args.copy() %}
-            {% set _ = args_prev.update({page_arg: pagination.prev_num}) %}
-            <a class="page-link" href="{{ url_for(endpoint, **args_prev) if pagination.has_prev else '#' }}" aria-label="Previous">
+            <a class="page-link" href="{{ url_for(endpoint, page=pagination.prev_num, **filtered_args) if pagination.has_prev else '#' }}" aria-label="Previous">
                 <span aria-hidden="true">&laquo;</span>
             </a>
         </li>
@@ -14,10 +12,8 @@
         {# 페이지 번호 링크 #}
         {% for p in pagination.iter_pages() %}
             {% if p %}
-                {% set args_p = filtered_args.copy() %}
-                {% set _ = args_p.update({page_arg: p}) %}
                 <li class="page-item {% if p == pagination.page %}active{% endif %}">
-                    <a class="page-link" href="{{ url_for(endpoint, **args_p) }}">{{ p }}</a>
+                    <a class="page-link" href="{{ url_for(endpoint, page=p, **filtered_args) }}">{{ p }}</a>
                 </li>
             {% else %}
                 <li class="page-item disabled"><span class="page-link">…</span></li>
@@ -26,9 +22,7 @@
         
         {# 다음 페이지 링크 #}
         <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
-            {% set args_next = filtered_args.copy() %}
-            {% set _ = args_next.update({page_arg: pagination.next_num}) %}
-            <a class="page-link" href="{{ url_for(endpoint, **args_next) if pagination.has_next else '#' }}" aria-label="Next">
+            <a class="page-link" href="{{ url_for(endpoint, page=pagination.next_num, **filtered_args) if pagination.has_next else '#' }}" aria-label="Next">
                 <span aria-hidden="true">&raquo;</span>
             </a>
         </li>

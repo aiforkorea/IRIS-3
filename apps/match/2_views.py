@@ -1,7 +1,7 @@
 # apps/match/views.py
 import csv
 from io import StringIO
-from datetime import datetime, time, timedelta
+from datetime import datetime, time
 from flask import render_template, request, redirect, url_for, flash, Response
 from flask_login import login_required, current_user
 from sqlalchemy import or_, cast, String
@@ -45,6 +45,7 @@ def log_action(title, summary, target_user_id=None, status_code=200):
 @match.route('/', methods=['GET', 'POST'], strict_slashes=False)
 @admin_required
 def match_manager():
+    # admin_required를 제거하고 필요에 따라 함수 내부에서 확인
     if not current_user.is_authenticated or not current_user.user_type == UserType.ADMIN:
         flash("접근 권한이 없습니다.", "danger")
         return redirect(url_for('auth.login'))
@@ -52,6 +53,7 @@ def match_manager():
     new_match_form = NewMatchForm()
     match_search_form = MatchSearchForm()
 
+    # 전문가 목록을 폼에 채우기
     experts = User.query.filter_by(user_type=UserType.EXPERT, is_active=True, is_deleted=False).order_by(User.username).all()
     expert_choices = [(expert.id, expert.username) for expert in experts]
     if not expert_choices:
@@ -60,62 +62,80 @@ def match_manager():
     new_match_form.expert_id.choices = expert_choices
     match_search_form.batch_expert_id.choices = expert_choices
 
-    # 탭 별 검색 로직 분리
-    search_type = request.args.get('search_type', 'new', type=str)
-
-    # 신규 매칭 탭의 사용자 목록 (페이지네이션 적용)
-    new_page = request.args.get('new_page', 1, type=int)
-    keyword_query_new = request.args.get('keyword', '', type=str)
-    start_date_query_new = request.args.get('start_date', type=str)
-    end_date_query_new = request.args.get('end_date', type=str)
+    # 신규 매칭 사용자 검색 폼 (상단)
+    if request.method == 'POST' and 'search_submit' in request.form:
+        new_match_form.process(request.form)
+        if new_match_form.validate_on_submit():
+            keyword = request.form.get('keyword')
+            start_date = request.form.get('start_date')
+            end_date = request.form.get('end_date')
+            params = {'search_type': 'new'} # 수정된 부분: 검색 타입을 지정
+            if keyword:
+                params['keyword'] = keyword
+            if start_date:
+                params['start_date'] = start_date
+            if end_date:
+                params['end_date'] = end_date
+            return redirect(url_for('match.match_manager', **params))
     
+    # GET 파라미터로 검색 조건 취득
+    search_type = request.args.get('search_type', 'new', type=str) # 수정된 부분: 검색 타입 파라미터 추가
+    keyword_query = request.args.get('keyword', '', type=str)
+#    status_query = request.args.get('status', 'all', type=str)
+
+    # --- 수정된 부분 ---
+    # status 파라미터가 없으면 'IN_PROGRESS'를 기본값으로 사용
+    status_query = request.args.get('status')
+    if status_query is None:
+        status_query = 'IN_PROGRESS'
+    # --- 수정 끝 ---
+
+    start_date_query = request.args.get('start_date', type=str)
+    end_date_query = request.args.get('end_date', type=str)
+
+    start_date_val = None
+    if start_date_query:
+        try:
+            start_date_val = datetime.date.fromisoformat(start_date_query)
+        except Exception:
+            start_date_val = None
+
+    end_date_val = None
+    if end_date_query:
+        try:
+            end_date_val = datetime.date.fromisoformat(end_date_query)
+        except Exception:
+            end_date_val = None
+
+    # 신규 매칭 탭의 사용자 목록
     new_match_query = User.query.filter(
         User.user_type == UserType.USER,
         User.match_status == MatchStatus.UNASSIGNED,
         User.is_active == True,
         User.is_deleted == False
     )
-    if search_type == 'new':
-        if keyword_query_new:
-            new_match_query = new_match_query.filter(
-                or_(
-                    cast(User.id, String).ilike(f'%{keyword_query_new}%'),
-                    User.username.ilike(f'%{keyword_query_new}%'),
-                    User.email.ilike(f'%{keyword_query_new}%')
-                )
+    if search_type == 'new' and keyword_query: # 수정된 부분: search_type이 'new'일 때만 필터 적용
+        new_match_query = new_match_query.filter(
+            or_(
+                cast(User.id, String).ilike(f'%{keyword_query}%'),
+                User.username.ilike(f'%{keyword_query}%'),
+                User.email.ilike(f'%{keyword_query}%')
             )
-        if start_date_query_new:
-            new_match_query = new_match_query.filter(User.created_at >= datetime.strptime(start_date_query_new, '%Y-%m-%d'))
-        if end_date_query_new:
-            new_match_query = new_match_query.filter(User.created_at <= datetime.strptime(end_date_query_new, '%Y-%m-%d') + timedelta(days=1))
+        )
+    if start_date_val and search_type == 'new':
+        new_match_query = new_match_query.filter(User.created_at >= start_date_val)
+    if end_date_val and search_type == 'new':
+        new_match_query = new_match_query.filter(User.created_at <= end_date_val + datetime.timedelta(days=1))
     
-    new_match_pagination = new_match_query.order_by(User.created_at.desc()).paginate(
-        page=new_page, per_page=10, error_out=False
-    )
-    users_to_match = new_match_pagination.items
-    
-    filtered_args_new = {'search_type': 'new'}
-    if keyword_query_new:
-        filtered_args_new['keyword'] = keyword_query_new
-    if start_date_query_new:
-        filtered_args_new['start_date'] = start_date_query_new
-    if end_date_query_new:
-        filtered_args_new['end_date'] = end_date_query_new
+    users_to_match = new_match_query.order_by(User.created_at.desc()).all()
 
     # 기존 매칭 관리 탭 로직
     page = request.args.get('page', 1, type=int)
-    keyword_query = request.args.get('keyword', '', type=str)
-    status_query = request.args.get('status')
-    if status_query is None:
-        status_query = 'IN_PROGRESS'
-    start_date_query = request.args.get('start_date', type=str)
-    end_date_query = request.args.get('end_date', type=str)
-    
     expert_alias = aliased(User)
     matches_query = db.session.query(Match).join(User, Match.user_id == User.id).outerjoin(expert_alias, Match.expert_id == expert_alias.id)
 
-    filtered_args = {'search_type': 'manage'}
-    if search_type == 'manage':
+    filtered_args = {'search_type': 'manage'} #  수정된 부분: 매칭 관리 검색 타입 지정
+    if search_type == 'manage': #  수정된 부분: search_type이 'manage'일 때만 필터 적용
         if keyword_query:
             matches_query = matches_query.filter(
                 or_(
@@ -130,22 +150,25 @@ def match_manager():
             )
             filtered_args['keyword'] = keyword_query
 
+        # --- 수정된 부분 ---
+        # status_query가 'all'이 아닐 경우에만 필터링 (기존 로직 유지)
         if status_query != 'all':
             matches_query = matches_query.filter(Match.status == MatchStatus[status_query])
+        # 페이지네이션을 위해 현재 status 값을 filtered_args에 추가
         filtered_args['status'] = status_query
+        # --- 수정 끝 ---
             
-        if start_date_query:
-            start_date_val = datetime.strptime(start_date_query, '%Y-%m-%d').date()
+        if start_date_val:
             matches_query = matches_query.filter(Match.created_at >= start_date_val)
             filtered_args['start_date'] = start_date_val.isoformat()
-        if end_date_query:
-            end_date_val = datetime.strptime(end_date_query, '%Y-%m-%d').date()
-            matches_query = matches_query.filter(Match.created_at <= end_date_val + timedelta(days=1))
+        if end_date_val:
+            matches_query = matches_query.filter(Match.created_at <= end_date_val + datetime.timedelta(days=1))
             filtered_args['end_date'] = end_date_val.isoformat()
     
     pagination = matches_query.order_by(Match.created_at.desc()).paginate(page=page, per_page=10, error_out=False)
     matches_history = pagination.items
 
+    # 카운트 정보
     unassigned_matches_count = User.query.filter(
         User.user_type == UserType.USER,
         User.match_status == MatchStatus.UNASSIGNED,
@@ -156,13 +179,11 @@ def match_manager():
         Match.status.in_([MatchStatus.IN_PROGRESS])
     ).count()
 
+    # 폼 데이터 바인딩
     new_match_form.process(request.args)
     match_search_form.process(request.args)
+    #match_search_form.status.choices = [('all', '모두')] + [(s.name, s.value) for s in MatchStatus]
     match_search_form.status.choices = [('all', '모두')] + [(s.name, s.name) for s in MatchStatus]
-    
-    # 탭 전환 시 매칭 관리 탭의 상태를 유지하기 위해 data에 status_query 할당
-    if search_type == 'manage':
-        match_search_form.status.data = status_query
 
     return render_template(
         'match/match_manager.html',
@@ -171,12 +192,11 @@ def match_manager():
         users_to_match=users_to_match,
         matches_history=matches_history,
         pagination=pagination,
-        new_match_pagination=new_match_pagination,
         unassigned_matches_count=unassigned_matches_count,
         in_progress_matches_count=in_progress_matches_count,
         filtered_args=filtered_args,
-        filtered_args_new=filtered_args_new,
     )
+
 
 @match.route('/new', methods=['POST'])
 @login_required

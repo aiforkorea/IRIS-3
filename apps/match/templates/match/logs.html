@@ -121,8 +121,10 @@
         </table>
     </div>
     {% endif %}
+    {% if pagination and pagination.pages > 1 %}
     <div class="card-footer">
-        {{ render_pagination(pagination, 'match.log_list', filtered_args) }}
+        {{ render_pagination(pagination, 'match.log_list', filtered_args, 'page') }}
     </div>
+    {% endif %}
 </div>
 {% endblock %}
