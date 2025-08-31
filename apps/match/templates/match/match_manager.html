@@ -8,27 +8,27 @@
 
     <ul class="nav nav-tabs" id="matchTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link {% if not pagination or request.endpoint == 'match.create_new_match' %}active{% endif %}" id="new-match-tab" data-bs-toggle="tab" data-bs-target="#new-match" type="button" role="tab" aria-controls="new-match" aria-selected="true">
+            <button class="nav-link {% if request.args.get('search_type', 'new') == 'new' %}active{% endif %}" id="new-match-tab" data-bs-toggle="tab" data-bs-target="#new-match" type="button" role="tab" aria-controls="new-match" aria-selected="true">
                 신규 매칭 ({{ unassigned_matches_count }})
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link {% if pagination and request.endpoint != 'match.create_new_match' %}active{% endif %}" id="manage-match-tab" data-bs-toggle="tab" data-bs-target="#manage-match" type="button" role="tab" aria-controls="manage-match" aria-selected="false">
+            <button class="nav-link {% if request.args.get('search_type') == 'manage' %}active{% endif %}" id="manage-match-tab" data-bs-toggle="tab" data-bs-target="#manage-match" type="button" role="tab" aria-controls="manage-match" aria-selected="false">
                 매칭 관리 ({{ pagination.total }})
             </button>
         </li>
     </ul>
 
     <div class="tab-content" id="matchTabsContent">
-        <div class="tab-pane fade {% if not pagination or request.endpoint == 'match.create_new_match' %}show active{% endif %}" id="new-match" role="tabpanel" aria-labelledby="new-match-tab">
+        <div class="tab-pane fade {% if request.args.get('search_type', 'new') == 'new' %}show active{% endif %}" id="new-match" role="tabpanel" aria-labelledby="new-match-tab">
             <div class="card my-3">
                 <div class="card-header">
                     <h5 class="mb-0">신규 매칭 사용자 검색</h5>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ url_for('match.match_manager') }}" class="row g-2 align-items-end">
+                    <form method="GET" action="{{ url_for('match.match_manager') }}" class="row g-2 align-items-end">
                         {{ new_match_form.csrf_token }}
-                        <div class="col-12 col-md-4 col-lg-4">
+                        <input type="hidden" name="search_type" value="new">  <div class="col-12 col-md-4 col-lg-4">
                             {{ new_match_form.keyword.label(class="form-label visually-hidden") }}
                             {{ new_match_form.keyword(class="form-control form-control-sm", type="search", placeholder="ID, 사용자명, 이메일 등") }}
                         </div>
@@ -94,7 +94,7 @@
             </form>
         </div>
 
-        <div class="tab-pane fade {% if pagination and request.endpoint != 'match.create_new_match' %}show active{% endif %}" id="manage-match" role="tabpanel" aria-labelledby="manage-match-tab">
+        <div class="tab-pane fade {% if request.args.get('search_type') == 'manage' %}show active{% endif %}" id="manage-match" role="tabpanel" aria-labelledby="manage-match-tab">
             <div class="card my-3">
                 <div class="card-header">
                     <h5 class="mb-0">매칭 기록 검색</h5>
@@ -102,7 +102,7 @@
                 <div class="card-body">
                     <form method="GET" action="{{ url_for('match.match_manager') }}" class="row g-2 align-items-end">
                         {{ match_search_form.csrf_token }}
-                        <div class="col-12 col-md-3 col-lg-3">
+                        <input type="hidden" name="search_type" value="manage"> <div class="col-12 col-md-3 col-lg-3">
                             {{ match_search_form.keyword.label(class="form-label visually-hidden") }}
                             {{ match_search_form.keyword(class="form-control form-control-sm", type="search", placeholder="ID, 사용자/전문가 ID, 이메일 등") }}
                         </div>
@@ -189,25 +189,6 @@
     document.getElementById('checkAllMatches').addEventListener('change', function() {
         const checkboxes = document.querySelectorAll('#manage-match .match-checkbox');
         checkboxes.forEach(cb => cb.checked = this.checked);
-    });
-    
-    // 탭 상태 유지
-    document.addEventListener('DOMContentLoaded', function() {
-        const manageTab = document.getElementById('manage-match-tab');
-        const managePane = document.getElementById('manage-match');
-        const searchParams = new URLSearchParams(window.location.search);
-        
-        // Activate "Manage Match" tab if any search parameters are present in the URL
-        if (searchParams.has('keyword') || searchParams.has('status') || searchParams.has('start_date') || searchParams.has('end_date') || searchParams.has('page')) {
-            const newTab = document.getElementById('new-match-tab');
-            const newPane = document.getElementById('new-match');
-            
-            newTab.classList.remove('active');
-            newPane.classList.remove('show', 'active');
-            
-            manageTab.classList.add('active');
-            managePane.classList.add('show', 'active');
-        }
     });
 </script>
 {% endblock %}

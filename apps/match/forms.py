@@ -11,10 +11,9 @@ class MultiCheckboxField(SelectMultipleField):
     option_widget = widgets.CheckboxInput()
 
 class NewMatchForm(FlaskForm):
-    """관리자 신규 매칭 탭의 검색 및 할당 폼"""
     keyword = StringField('키워드', render_kw={"placeholder": "user ID, 이메일 등"})
-    start_date = DateField("시작일", format='%Y-%m-%d', render_kw={"placeholder": "YYYY-MM-DD"})
-    end_date = DateField("종료일", format='%Y-%m-%d', render_kw={"placeholder": "YYYY-MM-DD"})
+    start_date = DateField("시작일", format='%Y-%m-%d', render_kw={"placeholder": "YYYY-MM-DD"}, validators=[Optional()])
+    end_date = DateField("종료일", format='%Y-%m-%d', render_kw={"placeholder": "YYYY-MM-DD"}, validators=[Optional()])
     search_submit = SubmitField("검색")
     expert_id = SelectField("전문가 선택", coerce=int, validators=[DataRequired()])
     assign_submit = SubmitField("매칭 생성")
@@ -22,17 +21,15 @@ class NewMatchForm(FlaskForm):
 
 # 수정된 MatchSearchForm 클래스
 class MatchSearchForm(FlaskForm):
-    #user_id = StringField("사용자 ID")
-    #expert_id = StringField("전문가 ID")
-    keyword = StringField('키워드', render_kw={"placeholder": "ID, 사용자/전문가 ID, 이메일 등"}) # 새롭게 추가
+    keyword = StringField('키워드', render_kw={"placeholder": "ID, 사용자/전문가 ID, 이메일 등"})
 
     status = SelectField(
         "상태",
-        choices=[],
-        validators=[Optional()]   # choices를 빈 리스트로 초기화 (동적으로 할당 예정) + 필수입력 막기 (MissingDataError 예방)
+        choices=[],         # 동적으로 할당됨
+        validators=[Optional()]
     )
-    start_date = DateField("시작일", format='%Y-%m-%d', render_kw={"placeholder": "YYYY-MM-DD"})
-    end_date = DateField("종료일", format='%Y-%m-%d', render_kw={"placeholder": "YYYY-MM-DD"})
+    start_date = DateField("시작일", format='%Y-%m-%d', render_kw={"placeholder": "YYYY-MM-DD"}, validators=[Optional()])
+    end_date = DateField("종료일", format='%Y-%m-%d', render_kw={"placeholder": "YYYY-MM-DD"}, validators=[Optional()])
     search_submit = SubmitField("검색")
     match_ids = MultiCheckboxField("매칭 선택", coerce=int, choices=[])
     batch_expert_id = SelectField("전문가 할당", coerce=int, choices=[])
