@@ -154,7 +154,13 @@
                         <tbody>
                             {% for match in matches_history %}
                             <tr>
-                                <td><input type="checkbox" name="match_ids" value="{{ match.id }}" class="match-checkbox"></td>
+        <td>
+            {# --- 수정된 부분 --- #}
+            {% if match.status.name == 'IN_PROGRESS' %}
+            <input type="checkbox" name="match_ids" value="{{ match.id }}" class="match-checkbox">
+            {% endif %}
+            {# --- 수정 끝 --- #}
+        </td>
                                 <td>{{ match.id }}</td>
                                 <td><a href="#">{{ match.user.email }}</a></td>
                                 <td><a href="#">{{ match.expert.email if match.expert else 'N/A' }}</a></td>

@@ -69,7 +69,7 @@ def match_manager():
             keyword = request.form.get('keyword')
             start_date = request.form.get('start_date')
             end_date = request.form.get('end_date')
-            params = {'search_type': 'new'} # ✅ 수정된 부분: 검색 타입을 지정
+            params = {'search_type': 'new'} # 수정된 부분: 검색 타입을 지정
             if keyword:
                 params['keyword'] = keyword
             if start_date:
@@ -79,9 +79,17 @@ def match_manager():
             return redirect(url_for('match.match_manager', **params))
     
     # GET 파라미터로 검색 조건 취득
-    search_type = request.args.get('search_type', 'new', type=str) # ✅ 수정된 부분: 검색 타입 파라미터 추가
+    search_type = request.args.get('search_type', 'new', type=str) # 수정된 부분: 검색 타입 파라미터 추가
     keyword_query = request.args.get('keyword', '', type=str)
-    status_query = request.args.get('status', 'all', type=str)
+#    status_query = request.args.get('status', 'all', type=str)
+
+    # --- 수정된 부분 ---
+    # status 파라미터가 없으면 'IN_PROGRESS'를 기본값으로 사용
+    status_query = request.args.get('status')
+    if status_query is None:
+        status_query = 'IN_PROGRESS'
+    # --- 수정 끝 ---
+
     start_date_query = request.args.get('start_date', type=str)
     end_date_query = request.args.get('end_date', type=str)
 
@@ -106,7 +114,7 @@ def match_manager():
         User.is_active == True,
         User.is_deleted == False
     )
-    if search_type == 'new' and keyword_query: # ✅ 수정된 부분: search_type이 'new'일 때만 필터 적용
+    if search_type == 'new' and keyword_query: # 수정된 부분: search_type이 'new'일 때만 필터 적용
         new_match_query = new_match_query.filter(
             or_(
                 cast(User.id, String).ilike(f'%{keyword_query}%'),
@@ -126,8 +134,8 @@ def match_manager():
     expert_alias = aliased(User)
     matches_query = db.session.query(Match).join(User, Match.user_id == User.id).outerjoin(expert_alias, Match.expert_id == expert_alias.id)
 
-    filtered_args = {'search_type': 'manage'} # ✅ 수정된 부분: 매칭 관리 검색 타입 지정
-    if search_type == 'manage': # ✅ 수정된 부분: search_type이 'manage'일 때만 필터 적용
+    filtered_args = {'search_type': 'manage'} #  수정된 부분: 매칭 관리 검색 타입 지정
+    if search_type == 'manage': #  수정된 부분: search_type이 'manage'일 때만 필터 적용
         if keyword_query:
             matches_query = matches_query.filter(
                 or_(
@@ -142,9 +150,13 @@ def match_manager():
             )
             filtered_args['keyword'] = keyword_query
 
+        # --- 수정된 부분 ---
+        # status_query가 'all'이 아닐 경우에만 필터링 (기존 로직 유지)
         if status_query != 'all':
-            matches_query = matches_query.filter(Match.status == MatchStatus[status_query]) 
-            filtered_args['status'] = status_query
+            matches_query = matches_query.filter(Match.status == MatchStatus[status_query])
+        # 페이지네이션을 위해 현재 status 값을 filtered_args에 추가
+        filtered_args['status'] = status_query
+        # --- 수정 끝 ---
             
         if start_date_val:
             matches_query = matches_query.filter(Match.created_at >= start_date_val)
