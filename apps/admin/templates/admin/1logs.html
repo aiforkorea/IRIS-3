@@ -1,6 +1,6 @@
 {# apps/admin/templates/admin/logs.html #}
 {% extends "base.html" %}
-{% from "_macros.html" import render_pagination %}   {# 파일명 및 macro import 수정됨 #}
+{% from "_macros_single.html" import render_pagination %}
 
 {% block content %}
 <div class="container-fluid">
@@ -12,7 +12,7 @@
                     {{ form.csrf_token }} 
                     <div class="col-12 col-md-4 col-lg-4">
                         {{ form.keyword.label(class="visually-hidden") }}
-                        {{ form.keyword(class="form-control form-control-sm", type="search", placeholder="키워드 입력") }}
+                        {{ form.keyword(class="form-control form-control-sm", type="search", placeholder="키워드 입력") }}    {# type="search" #}
                     </div>
                     <div class="col-12 col-md-4 col-lg-2">
                         {{ form.log_title.label(class="visually-hidden") }}
@@ -76,6 +76,7 @@
                     <td>{{ log.endpoint }}</td>
                     <td>{{ log.log_title }}</td>
                     <td title="{{ log.log_summary }}">
+                        {# 내용이 길 경우 50자까지만 표시하고 나머지는 ... 처리 #}
                         {{ log.log_summary[:50] }}{% if log.log_summary|length > 50 %}...{% endif %}
                     </td>
                     <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
@@ -107,8 +108,7 @@
     </div>
     {% endif %}
     <div class="card-footer">
-        {# 매크로 인자 4개 전달: pagination, endpoint, filtered_args, page_arg #}
-        {{ render_pagination(pagination, 'admin.log_list', filtered_args, 'page') }}
+        {{ render_pagination(pagination, 'admin.log_list', filtered_args) }}
     </div>
 </div>
 {% endblock %}
