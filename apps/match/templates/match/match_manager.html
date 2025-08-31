@@ -130,6 +130,12 @@
 
             <form method="POST" action="{{ url_for('match.batch_update_matches') }}">
                 {{ match_search_form.csrf_token }}
+        {# --- 추가된 부분 --- #}
+        <input type="hidden" name="keyword" value="{{ request.args.get('keyword', '') }}">
+        <input type="hidden" name="status" value="{{ request.args.get('status', status_query) }}">
+        <input type="hidden" name="start_date" value="{{ request.args.get('start_date', '') }}">
+        <input type="hidden" name="end_date" value="{{ request.args.get('end_date', '') }}">
+        {# --- 추가 끝 --- #}
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5 class="mb-0">전체 매칭 기록</h5>
                     <div class="d-flex align-items-center gap-2">

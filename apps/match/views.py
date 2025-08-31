@@ -393,7 +393,20 @@ def batch_update_matches():
             db.session.rollback()
             flash(f"작업 처리 중 오류가 발생했습니다: {str(e)}", "danger")
 
-    return redirect(url_for('match.match_manager'))
+    # --- 수정된 부분 ---
+    # 템플릿의 hidden input으로부터 검색 파라미터를 받음
+    redirect_args = {
+        'search_type': 'manage',
+        'keyword': request.form.get('keyword', ''),
+        'status': request.form.get('status', 'IN_PROGRESS'),
+        'start_date': request.form.get('start_date', ''),
+        'end_date': request.form.get('end_date', '')
+    }
+    # 빈 값은 전달하지 않도록 정리
+    redirect_args = {k: v for k, v in redirect_args.items() if v}
+
+    return redirect(url_for('match.match_manager', **redirect_args))
+    # --- 수정 끝 ---
 
 @match.route('/logs', methods=['GET', 'POST'])
 @admin_required
