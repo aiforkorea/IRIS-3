@@ -44,7 +44,7 @@ def iris_predict():
             sepal_width=sepal_width,
             petal_length=petal_length,
             petal_width=petal_width,
-            user_id=current_user.id 
+            #user_id=current_user.id  # 자신만 중복 체크
         ).first()
 
         if existing_result:
@@ -279,7 +279,8 @@ def confirm_result(result_id):
                 print("No logs found for this prediction_result_id.")
     
             new_usage_log = UsageLog(
-                user_id=recent_log.user_id,     
+                #user_id=recent_log.user_id,     
+                user_id=current_user.id,     
                 service_id=recent_log.service_id, 
                 api_key_id=recent_log.api_key_id, 
                 endpoint=request.path,            
@@ -308,7 +309,7 @@ def edit_confirmed_class(result_id):
     result = IrisResult.query.get_or_404(result_id)
     if current_user.is_expert():
         matched_user_ids = [m.user_id for m in Match.query.filter_by(expert_id=current_user.id).all()]
-        if result.user_id not in matched_user_ids:
+        if result.user_id not in matched_user_ids and result.user_id != current_user.id:
             flash('다른 사용자의 결과를 수정 할 수 없습니다.', 'danger')
             abort(403)
     elif not current_user.is_admin() and result.user_id != current_user.id:
@@ -326,7 +327,7 @@ def edit_confirmed_class(result_id):
                 recent_log = UsageLog.query.filter_by(prediction_result_id=result.id).order_by(desc(UsageLog.timestamp)).first()
                 if recent_log:
                     new_usage_log = UsageLog(
-                        user_id=recent_log.user_id,
+                        user_id=current_user.id,     
                         service_id=recent_log.service_id,
                         api_key_id=recent_log.api_key_id,
                         endpoint=request.path,
@@ -348,6 +349,8 @@ def edit_confirmed_class(result_id):
             flash('유효하지 않은 품종입니다.', 'danger')
     return redirect(url_for('iris.results'))
 
+"""
+HARD DELETE 
 # 수정된 delete_result() 함수
 @iris.route('/delete_result/<int:result_id>', methods=['POST'])
 @login_required
@@ -357,7 +360,7 @@ def delete_result(result_id):
     # 권한 확인
     if current_user.is_expert():
         matched_user_ids = [m.user_id for m in Match.query.filter_by(expert_id=current_user.id).all()]
-        if result.user_id not in matched_user_ids:
+        if result.user_id not in matched_user_ids and result.user_id != current_user.id:
             flash('다른 사용자의 결과를 삭제할 수 없습니다.', 'danger')
             abort(403)
     elif not current_user.is_admin() and result.user_id != current_user.id:
@@ -365,6 +368,8 @@ def delete_result(result_id):
         abort(403)
 
     try:
+        # 1. soft-delete 로 변경 필요
+        # 2. 과거 존재한 모든 log에 대해 삭제로 처리함 -> 이번 것만 삭제로 처리, 나머지는 그대로 
         related_logs = UsageLog.query.filter_by(prediction_result_id=result.id).all()
         for log in related_logs:
             log.log_status = "삭제"
@@ -373,6 +378,53 @@ def delete_result(result_id):
         db.session.delete(result)
         db.session.commit()
         flash('추론 결과 및 관련 로그가 성공적으로 삭제 처리되었습니다.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'결과 삭제 중 오류가 발생했습니다: {e}', 'danger')
+    return redirect(url_for('iris.results'))
+"""
+
+# 수정된 delete_result() 함수  SOFT-DELETE
+@iris.route('/delete_result/<int:result_id>', methods=['POST'])
+@login_required
+def delete_result(result_id):
+    result = IrisResult.query.get_or_404(result_id)
+    
+    # 권한 확인 (기존 로직 유지)
+    if current_user.is_expert():
+        matched_user_ids = [m.user_id for m in Match.query.filter_by(expert_id=current_user.id).all()]
+        if result.user_id not in matched_user_ids and result.user_id != current_user.id:
+            flash('다른 사용자의 결과를 삭제할 수 없습니다.', 'danger')
+            abort(403)
+    elif not current_user.is_admin() and result.user_id != current_user.id:
+        flash('다른 사용자의 결과를 삭제할 수 없습니다.', 'danger')
+        abort(403)
+
+    try:
+        # soft-delete 적용: is_deleted 필드를 True로 변경
+        result.is_deleted = True
+        db.session.commit()
+
+        # 삭제 로그만 새로 생성 (기존 로그는 변경하지 않음)
+        # 삭제 로그에 필요한 이전 정보 가져오기
+        recent_log = UsageLog.query.filter_by(prediction_result_id=result.id).order_by(desc(UsageLog.timestamp)).first()
+        if recent_log:
+            new_usage_log = UsageLog(
+                user_id=current_user.id,
+                service_id=recent_log.service_id,
+                api_key_id=recent_log.api_key_id,
+                endpoint=request.path,
+                usage_type=UsageType.WEB_UI,
+                log_status='삭제',  
+                inference_timestamp=recent_log.inference_timestamp,
+                remote_addr=request.remote_addr,
+                response_status_code=200,
+                prediction_result_id=result.id
+            )
+            db.session.add(new_usage_log)
+            db.session.commit()
+       
+        flash('추론 결과가 성공적으로 삭제 처리되었습니다.', 'success')
     except Exception as e:
         db.session.rollback()
         flash(f'결과 삭제 중 오류가 발생했습니다: {e}', 'danger')
@@ -386,7 +438,8 @@ def logs():
     if current_user.is_admin():
         user_logs = UsageLog.query.order_by(UsageLog.timestamp.desc()).all()
     elif current_user.is_expert():
-        matched_user_ids = [m.user_id for m in Match.query.filter_by(expert_id=current_user.id).all()]
+        matched_user_ids = [m.user_id for m in Match.query.filter_by(expert_id=current_user.id, status=MatchStatus.IN_PROGRESS).all()]
+        #print(matched_user_ids)
         user_logs = UsageLog.query.filter(
             (UsageLog.user_id.in_(matched_user_ids)) | (UsageLog.user_id == current_user.id)
         ).order_by(UsageLog.timestamp.desc()).all()
@@ -394,3 +447,165 @@ def logs():
         user_logs = UsageLog.query.filter_by(user_id=current_user.id).order_by(UsageLog.timestamp.desc()).all()
 
     return render_template('iris/user_logs.html', title='AI로그이력', results=user_logs)
+
+@iris.route('/api/predict', methods=['POST'])
+#@rate_limit('API_KEY_RATE_LIMIT')
+@csrf.exempt
+def api_predict():
+    print("api_predict 시작")
+    auth_header = request.headers.get('X-API-Key')
+    if not auth_header:
+        return jsonify({"error": "API Key is required"}), 401
+    
+    # API 키 검증 및 관련 정보 조회
+    api_key_entry = APIKey.query.filter_by(key_string=auth_header, is_active=True).first()
+    
+    if not api_key_entry:
+        return jsonify({"error": "Invalid or inactive API Key"}), 401
+    
+    # 'iris' 서비스 ID 조회 (API 요청 처리 전에 미리 조회)
+    # 서비스 등록을 안했음으로 데이터가 없음(일단, comment 처리)
+    #iris_service = Service.query.filter_by(servicename='iris').first()
+    #if not iris_service:
+    #    return jsonify({"error": "Iris service not found"}), 500
+    
+    #iris_service_id = iris_service.id
+    iris_service_id = 1   # 임의로 설정
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON"}), 400
+
+    required_fields = ['sepal_length', 'sepal_width', 'petal_length', 'petal_width']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({"error": f"Missing field: {field}"}), 400
+
+    try:
+        sepal_length = float(data['sepal_length'])
+        sepal_width = float(data['sepal_width'])
+        petal_length = float(data['petal_length'])
+        petal_width = float(data['petal_width'])
+    except ValueError:
+        return jsonify({"error": "Invalid data type for Iris features. Must be numbers."}), 400
+
+    try:
+        # 중복 레코드 확인
+        existing_result = IrisResult.query.filter_by(
+            sepal_length=sepal_length,
+            sepal_width=sepal_width,
+            petal_length=petal_length,
+            petal_width=petal_width,
+            #user_id=api_key_entry.user_id  # 자신만 중복 체크
+        ).first()
+
+        # 중복 레코드가 있는 경우
+        if existing_result:
+            return jsonify({
+                "message": "This prediction already exists.",
+                "predicted_class": existing_result.predicted_class,
+                "confirmed_class": existing_result.confirmed_class,
+                "created_at": existing_result.created_at.isoformat() if existing_result.created_at else None,
+                #"created_at": existing_result.created_at,
+                "sepal_length": sepal_length,
+                "sepal_width": sepal_width,
+                "petal_length": petal_length,
+                "petal_width": petal_width
+            }), 200
+            
+        # 중복이 없는 경우, 새로운 레코드 생성
+
+        features = np.array([[sepal_length, sepal_width, petal_length, petal_width]])
+        #pred_index = model.predict(features)[0] - 1  # 모델 예측 결과는 1부터 시작하므로 -1
+        pred_index = model.predict(features)[0]  # 모델 예측 결과는 0부터 시작
+        predicted_class_name = TARGET_NAMES[pred_index]
+        
+        try:
+            pred = model.predict(features)[0]
+            print(f"예측 값 0부터 시작하는 지 확인: {pred}")  # pred는 0부터 시작
+            # 1. 'iris' 서비스의 ID를 조회합니다.
+            # 만약 서비스가 없으면 None으로 처리하거나 오류를 낼 수 있습니다.
+            #iris_service = Service.query.filter_by(servicename='iris').first()   # Service 테이블의 servicename이 'iris'인 서비스 조회
+            # 만약 서비스가 없으면 None이 될 수 있으므로, 이 부분을 수정
+            #iris_service_id = iris_service.id if iris_service else None
+            iris_service_id = 1   # 서비스 번호는 임의로 설정, 향후 다중 서비스인 경우, 해당 ID 할당 예정
+            # 1. IrisResult 객체 생성
+            new_iris_entry = IrisResult(
+                user_id=api_key_entry.user_id,
+                service_id=iris_service_id, # service_id 할당
+                api_key_id=api_key_entry.id,
+                sepal_length=sepal_length,
+                sepal_width=sepal_width,
+                petal_length=petal_length,
+                petal_width=petal_width,
+                predicted_class=predicted_class_name,
+                model_version='1.0',
+                confirmed_class=None,
+                confirm=False,
+                type='iris', # IrisResult에 type 컬럼이 있다면 추가
+                redundancy=False # 중복이 아니므로 False로 설정
+            )
+            # logging
+            current_app.logger.debug("new_iris_entry: %s", new_iris_entry)
+            db.session.add(new_iris_entry)
+            # 2. flush()를 통해 new_iris_entry의 ID를 미리 가져옵니다.
+            #    아직 커밋은 하지 않아, 트랜잭션은 유지됩니다.
+            db.session.flush() 
+
+            print(f"new_iris_entry.id: {new_iris_entry.id}")
+            # 3. UsageLog 객체 생성 시 위에서 얻은 ID를 사용합니다.
+            # UsageLog 객체 생성
+            new_usage_log = UsageLog(
+                user_id=api_key_entry.user_id,
+                service_id=iris_service_id, # service_id 할당
+                api_key_id=api_key_entry.id,
+                usage_type=UsageType.API_KEY,
+                endpoint=request.path,
+                inference_timestamp=datetime.now(), # 추론시각을 별도로 기록
+                remote_addr=request.remote_addr,
+                response_status_code=200,
+                request_data_summary=str(data)[:200],
+                prediction_result_id=new_iris_entry.id # 여기를 추가!
+            )
+            db.session.add(new_usage_log)
+            # 4. 두 객체를 하나의 트랜잭션으로 한 번에 커밋합니다.
+            db.session.commit()
+
+            return jsonify({
+                "predicted_class": predicted_class_name,
+                "sepal_length": sepal_length,
+                "sepal_width": sepal_width,
+                "petal_length": petal_length,
+                "petal_width": petal_width
+            }), 200
+
+        except Exception as e:
+            # 오류 발생 시, 모든 변경 사항을 되돌립니다.
+            db.session.rollback()
+
+    except Exception as e:
+        # 광범위한 예외 처리를 하나로 통합
+        logging.error(f"Unexpected error in /api/predict (API Key): {e}", exc_info=True)
+        db.session.rollback()
+        return jsonify({"error": "An unexpected error occurred."}), 500
+
+
+"""
+윈도우 CMD
+curl -X POST "http://localhost:5000/iris/api/predict" -H "Content-Type: application/json" -H "X-API-Key: your_api_key" -d "{\"sepal_length\":6.0,\"sepal_width\":3.5,\"petal_length\":4.5,\"petal_width\":1.5}"
+윈도우 파워쉘
+$headers = @{
+    "Content-Type" = "application/json"
+    "X-API-Key" = "your_api_key"
+}
+
+$body = @{
+    sepal_length = 6.0
+    sepal_width = 3.5
+    petal_length = 4.5
+    petal_width = 1.5
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "http://localhost:5000/iris/api/predict" -Method Post -Headers $headers -Body $body
+
+"""

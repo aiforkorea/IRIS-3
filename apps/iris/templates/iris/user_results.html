@@ -1,3 +1,4 @@
+{# apps/iris/templates/iris/user_results.html #}
 {% extends 'iris_base.html' %}
 {% block title %}
 {% endblock %}
@@ -105,8 +106,8 @@
             {% endif %}
         </td>
         <td>
-            {% if not result.confirm and (current_user.id == result.user_id or current_user.is_admin() or current_user.is_expert()) %}
-                <form action="{{ url_for('iris.confirm_result', result_id=result.id) }}" method="POST" class="d-inline">
+            {% if not result.confirmed_class and (current_user.id == result.user_id or current_user.is_admin() or current_user.is_expert()) %}
+                <form action="{{ url_for('iris.edit_confirmed_class', result_id=result.id) }}" method="POST" class="d-inline">
                     {{ form.csrf_token }}
                     <div class="input-group">
                         <select class="form-select form-select-sm" name="confirmed_class">

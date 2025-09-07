@@ -318,6 +318,7 @@ class PredictionResult(db.Model):
     service_id = db.Column(db.Integer, db.ForeignKey('services.id'), nullable=False)
     api_key_id = db.Column(db.Integer, db.ForeignKey('api_keys.id'), index=True, nullable=True)
     predicted_class = db.Column(db.String(50))
+    is_deleted = db.Column(db.Boolean, default=False)
     model_version = db.Column(db.String(20), default='1.0')
     confirmed_class = db.Column(db.String(50))
     confirm = db.Column(db.Boolean, default=False)
