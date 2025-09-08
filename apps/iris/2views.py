@@ -36,7 +36,7 @@ def iris_predict():
         sepal_width = form.sepal_width.data
         petal_length = form.petal_length.data
         petal_width = form.petal_width.data
-        
+       
         features = np.array([[sepal_length, sepal_width, petal_length, petal_width]])
 
         existing_result = IrisResult.query.filter_by(
@@ -44,23 +44,14 @@ def iris_predict():
             sepal_width=sepal_width,
             petal_length=petal_length,
             petal_width=petal_width,
-            is_deleted=False, # Soft delete된 데이터는 제외
-            user_id=current_user.id #
+            #user_id=current_user.id  # 자신만 중복 체크
         ).first()
 
-        can_confirm = current_user.is_expert() or current_user.is_admin()
-        
-        existing_result_found = False
-
         if existing_result:
-            existing_result_found = True
-            
-            # 확인 클래스 값이 None이면 '미확인 not available'으로 표시
-            confirmed_class_display = existing_result.confirmed_class if existing_result.confirmed_class else "not available"
+            flash("이미 존재하는 값입니다. 기존 예측 결과를 표시합니다.", 'info')
 
             return render_template('iris/predict.html',
                                    result=existing_result.predicted_class,
-                                   confirmed_class=confirmed_class_display,
                                    sepal_length=sepal_length,
                                    sepal_width=sepal_width,
                                    petal_length=petal_length,
@@ -68,12 +59,11 @@ def iris_predict():
                                    form=form,
                                    TARGET_NAMES=TARGET_NAMES,
                                    iris_result_id=existing_result.id,
-                                   allow_confirm_save=False,
-                                   existing_result_found=existing_result_found)
+                                   allow_confirm_save=False) 
+
         else:
-            # 새로운 입력값인 경우
             pred = model.predict(features)[0]
-            iris_service_id = 1    
+            iris_service_id = 1   
 
             new_iris_result = IrisResult(
                 user_id=current_user.id,
@@ -87,32 +77,27 @@ def iris_predict():
                 confirm=False  
             )
             db.session.add(new_iris_result)
-            db.session.flush()
+            db.session.flush() 
             new_usage_log = UsageLog(
                 user_id=current_user.id,
                 usage_type=UsageType.WEB_UI,
                 endpoint=request.path,
                 remote_addr=request.remote_addr,
                 response_status_code=200,
-                inference_timestamp=datetime.now(),
-                service_id=iris_service_id,
-                prediction_result_id=new_iris_result.id
+                inference_timestamp=datetime.now(), 
+                service_id=iris_service_id, 
+                prediction_result_id=new_iris_result.id 
             )
             db.session.add(new_usage_log)
             db.session.commit()
             iris_result_id = new_iris_result.id
-            
             return render_template('iris/predict.html',
-                                 result=TARGET_NAMES[pred],
-                                 confirmed_class="not available",
-                                 sepal_length=sepal_length, sepal_width=sepal_width,
-                                 petal_length=petal_length, petal_width=petal_width, form=form,
-                                 TARGET_NAMES=TARGET_NAMES, iris_result_id=iris_result_id,
-                                 allow_confirm_save=can_confirm,
-                                 existing_result_found=existing_result_found)
-
-    return render_template('iris/predict.html', form=form, existing_result_found=False, confirmed_class="not available")
-
+                                result=TARGET_NAMES[pred],
+                                sepal_length=sepal_length, sepal_width=sepal_width,
+                                petal_length=petal_length, petal_width=petal_width, form=form,
+                                TARGET_NAMES=TARGET_NAMES, iris_result_id=iris_result_id,
+                                allow_confirm_save=True)
+    return render_template('iris/predict.html', form=form)
 
 @iris.route('/save_iris_data', methods=['POST'])
 @login_required
@@ -124,31 +109,19 @@ def save_iris_data():
     result_id = request.form.get('iris_result_id')
     confirmed_class = request.form.get('confirmed_class')
 
-    # 전문가와 관리자만 이 함수에 접근하도록 권한 확인을 추가 (보안 강화)
-    if not (current_user.is_expert() or current_user.is_admin()):
-        flash('추론 결과를 확인 저장할 권한이 없습니다.', 'danger')
-        abort(403)
-        
     if not result_id or confirmed_class not in ['setosa', 'versicolor', 'virginica']:
         flash('유효한 데이터 ID 또는 품종이 아닙니다.', 'danger')
         return redirect(url_for('iris.iris_predict'))
 
     try:
         result = IrisResult.query.filter_by(id=result_id).first_or_404()
-        # 사용자가 자신의 결과가 아닌 다른 사람의 결과를 수정하려는 경우도 방지
-        if result.user_id != current_user.id and not current_user.is_admin() and not current_user.is_expert():
+        if result.user_id != current_user.id:
             abort(403)
-        
-        # 이미 확인된 결과는 다시 저장할 수 없도록 로직 추가
-        if result.confirm:
-            flash("이미 확인된 결과는 다시 저장할 수 없습니다.", 'warning')
-            return redirect(url_for('iris.iris_predict'))
-
         result.confirmed_class = confirmed_class
         result.confirm = True
         result.confirmed_at = datetime.now()
         recent_log = UsageLog.query.filter_by(prediction_result_id=result.id).order_by(desc(UsageLog.timestamp)).first()
-        
+       
         new_usage_log = UsageLog(
             user_id=current_user.id,
             service_id=recent_log.service_id if recent_log else None,
@@ -251,9 +224,6 @@ def results():
         elif confirm_query == 'false':
             query = query.filter(IrisResult.confirm == False)
 
-    # Soft-deleted 항목은 제외하고 조회
-    query = query.filter(IrisResult.is_deleted == False)
-
     query = query.order_by(IrisResult.created_at.desc())
 
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
@@ -302,24 +272,24 @@ def confirm_result(result_id):
                 .first()                                 
             )
             print(f"recent_log: {recent_log}")
-        
+       
             if recent_log:
                 print(f"Recent log found: {recent_log.timestamp}")
             else:
                 print("No logs found for this prediction_result_id.")
-        
+    
             new_usage_log = UsageLog(
-                #user_id=recent_log.user_id,    
-                user_id=current_user.id,      
-                service_id=recent_log.service_id,
-                api_key_id=recent_log.api_key_id,
+                #user_id=recent_log.user_id,     
+                user_id=current_user.id,     
+                service_id=recent_log.service_id, 
+                api_key_id=recent_log.api_key_id, 
                 endpoint=request.path,            
                 usage_type=UsageType.WEB_UI,
-                log_status='추론확인',              
-                inference_timestamp=recent_log.inference_timestamp,
-                remote_addr=request.remote_addr,    
+                log_status='추론확인',             
+                inference_timestamp=recent_log.inference_timestamp, 
+                remote_addr=request.remote_addr,   
                 response_status_code = 200,
-                prediction_result_id=recent_log.prediction_result_id
+                prediction_result_id=recent_log.prediction_result_id 
             )
             db.session.add(new_usage_log)
             db.session.commit()
@@ -346,8 +316,8 @@ def edit_confirmed_class(result_id):
         flash('다른 사용자의 결과를 수정 할 수 없습니다.', 'danger')
         abort(403)
         
-    form = EmptyForm()  
-    if form.validate_on_submit():  
+    form = EmptyForm() 
+    if form.validate_on_submit(): 
         confirmed_class = request.form.get('confirmed_class')
         if confirmed_class in ['setosa', 'versicolor', 'virginica']:
             try:
@@ -357,7 +327,7 @@ def edit_confirmed_class(result_id):
                 recent_log = UsageLog.query.filter_by(prediction_result_id=result.id).order_by(desc(UsageLog.timestamp)).first()
                 if recent_log:
                     new_usage_log = UsageLog(
-                        user_id=current_user.id,      
+                        user_id=current_user.id,     
                         service_id=recent_log.service_id,
                         api_key_id=recent_log.api_key_id,
                         endpoint=request.path,
@@ -370,7 +340,7 @@ def edit_confirmed_class(result_id):
                     )
                     db.session.add(new_usage_log)
                     db.session.commit()
-                
+               
                 flash('확인 품종이 성공적으로 수정되었습니다.', 'success')
             except Exception as e:
                 db.session.rollback()
@@ -378,6 +348,41 @@ def edit_confirmed_class(result_id):
         else:
             flash('유효하지 않은 품종입니다.', 'danger')
     return redirect(url_for('iris.results'))
+
+"""
+HARD DELETE 
+# 수정된 delete_result() 함수
+@iris.route('/delete_result/<int:result_id>', methods=['POST'])
+@login_required
+def delete_result(result_id):
+    result = IrisResult.query.get_or_404(result_id)
+    
+    # 권한 확인
+    if current_user.is_expert():
+        matched_user_ids = [m.user_id for m in Match.query.filter_by(expert_id=current_user.id).all()]
+        if result.user_id not in matched_user_ids and result.user_id != current_user.id:
+            flash('다른 사용자의 결과를 삭제할 수 없습니다.', 'danger')
+            abort(403)
+    elif not current_user.is_admin() and result.user_id != current_user.id:
+        flash('다른 사용자의 결과를 삭제할 수 없습니다.', 'danger')
+        abort(403)
+
+    try:
+        # 1. soft-delete 로 변경 필요
+        # 2. 과거 존재한 모든 log에 대해 삭제로 처리함 -> 이번 것만 삭제로 처리, 나머지는 그대로 
+        related_logs = UsageLog.query.filter_by(prediction_result_id=result.id).all()
+        for log in related_logs:
+            log.log_status = "삭제"
+            log.inference_stamp = log.timestamp 
+            log.timestamp = datetime.now() 
+        db.session.delete(result)
+        db.session.commit()
+        flash('추론 결과 및 관련 로그가 성공적으로 삭제 처리되었습니다.', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'결과 삭제 중 오류가 발생했습니다: {e}', 'danger')
+    return redirect(url_for('iris.results'))
+"""
 
 # 수정된 delete_result() 함수  SOFT-DELETE
 @iris.route('/delete_result/<int:result_id>', methods=['POST'])
@@ -418,7 +423,7 @@ def delete_result(result_id):
             )
             db.session.add(new_usage_log)
             db.session.commit()
-        
+       
         flash('추론 결과가 성공적으로 삭제 처리되었습니다.', 'success')
     except Exception as e:
         db.session.rollback()
@@ -442,23 +447,30 @@ def logs():
         user_logs = UsageLog.query.filter_by(user_id=current_user.id).order_by(UsageLog.timestamp.desc()).all()
 
     return render_template('iris/user_logs.html', title='AI로그이력', results=user_logs)
-#
+
 @iris.route('/api/predict', methods=['POST'])
+#@rate_limit('API_KEY_RATE_LIMIT')
 @csrf.exempt
 def api_predict():
-    current_app.logger.info("API predict request received.")
+    print("api_predict 시작")
     auth_header = request.headers.get('X-API-Key')
     if not auth_header:
         return jsonify({"error": "API Key is required"}), 401
-
+    
+    # API 키 검증 및 관련 정보 조회
     api_key_entry = APIKey.query.filter_by(key_string=auth_header, is_active=True).first()
-
+    
     if not api_key_entry:
         return jsonify({"error": "Invalid or inactive API Key"}), 401
     
-    if model is None:
-        logging.error("Model is not loaded. Cannot process prediction.")
-        return jsonify({"error": "Service is temporarily unavailable."}), 503
+    # 'iris' 서비스 ID 조회 (API 요청 처리 전에 미리 조회)
+    # 서비스 등록을 안했음으로 데이터가 없음(일단, comment 처리)
+    #iris_service = Service.query.filter_by(servicename='iris').first()
+    #if not iris_service:
+    #    return jsonify({"error": "Iris service not found"}), 500
+    
+    #iris_service_id = iris_service.id
+    iris_service_id = 1   # 임의로 설정
 
     data = request.get_json()
     if not data:
@@ -475,99 +487,106 @@ def api_predict():
         petal_length = float(data['petal_length'])
         petal_width = float(data['petal_width'])
     except ValueError:
-        return jsonify({"error": "Invalid data type for Iris features. All fields must be numbers."}), 400
+        return jsonify({"error": "Invalid data type for Iris features. Must be numbers."}), 400
 
     try:
-        iris_service_id = 1
-
+        # 중복 레코드 확인
         existing_result = IrisResult.query.filter_by(
             sepal_length=sepal_length,
             sepal_width=sepal_width,
             petal_length=petal_length,
             petal_width=petal_width,
-            is_deleted=False, # Soft delete된 데이터는 제외
-            user_id=api_key_entry.user_id #
+            #user_id=api_key_entry.user_id  # 자신만 중복 체크
         ).first()
 
+        # 중복 레코드가 있는 경우
         if existing_result:
-            confirmed_class_display = existing_result.confirmed_class if existing_result.confirmed_class else "not available"
+            return jsonify({
+                "message": "This prediction already exists.",
+                "predicted_class": existing_result.predicted_class,
+                "confirmed_class": existing_result.confirmed_class,
+                "created_at": existing_result.created_at.isoformat() if existing_result.created_at else None,
+                #"created_at": existing_result.created_at,
+                "sepal_length": sepal_length,
+                "sepal_width": sepal_width,
+                "petal_length": petal_length,
+                "petal_width": petal_width
+            }), 200
             
-            redundancy_log = UsageLog(
+        # 중복이 없는 경우, 새로운 레코드 생성
+
+        features = np.array([[sepal_length, sepal_width, petal_length, petal_width]])
+        #pred_index = model.predict(features)[0] - 1  # 모델 예측 결과는 1부터 시작하므로 -1
+        pred_index = model.predict(features)[0]  # 모델 예측 결과는 0부터 시작
+        predicted_class_name = TARGET_NAMES[pred_index]
+        
+        try:
+            pred = model.predict(features)[0]
+            print(f"예측 값 0부터 시작하는 지 확인: {pred}")  # pred는 0부터 시작
+            # 1. 'iris' 서비스의 ID를 조회합니다.
+            # 만약 서비스가 없으면 None으로 처리하거나 오류를 낼 수 있습니다.
+            #iris_service = Service.query.filter_by(servicename='iris').first()   # Service 테이블의 servicename이 'iris'인 서비스 조회
+            # 만약 서비스가 없으면 None이 될 수 있으므로, 이 부분을 수정
+            #iris_service_id = iris_service.id if iris_service else None
+            iris_service_id = 1   # 서비스 번호는 임의로 설정, 향후 다중 서비스인 경우, 해당 ID 할당 예정
+            # 1. IrisResult 객체 생성
+            new_iris_entry = IrisResult(
                 user_id=api_key_entry.user_id,
-                service_id=iris_service_id,
+                service_id=iris_service_id, # service_id 할당
+                api_key_id=api_key_entry.id,
+                sepal_length=sepal_length,
+                sepal_width=sepal_width,
+                petal_length=petal_length,
+                petal_width=petal_width,
+                predicted_class=predicted_class_name,
+                model_version='1.0',
+                confirmed_class=None,
+                confirm=False,
+                type='iris', # IrisResult에 type 컬럼이 있다면 추가
+                redundancy=False # 중복이 아니므로 False로 설정
+            )
+            # logging
+            current_app.logger.debug("new_iris_entry: %s", new_iris_entry)
+            db.session.add(new_iris_entry)
+            # 2. flush()를 통해 new_iris_entry의 ID를 미리 가져옵니다.
+            #    아직 커밋은 하지 않아, 트랜잭션은 유지됩니다.
+            db.session.flush() 
+
+            print(f"new_iris_entry.id: {new_iris_entry.id}")
+            # 3. UsageLog 객체 생성 시 위에서 얻은 ID를 사용합니다.
+            # UsageLog 객체 생성
+            new_usage_log = UsageLog(
+                user_id=api_key_entry.user_id,
+                service_id=iris_service_id, # service_id 할당
                 api_key_id=api_key_entry.id,
                 usage_type=UsageType.API_KEY,
                 endpoint=request.path,
-                inference_timestamp=datetime.now(),
+                inference_timestamp=datetime.now(), # 추론시각을 별도로 기록
                 remote_addr=request.remote_addr,
                 response_status_code=200,
                 request_data_summary=str(data)[:200],
-                log_status='중복',
-                prediction_result_id=existing_result.id
+                prediction_result_id=new_iris_entry.id # 여기를 추가!
             )
-            db.session.add(redundancy_log)
+            db.session.add(new_usage_log)
+            # 4. 두 객체를 하나의 트랜잭션으로 한 번에 커밋합니다.
             db.session.commit()
-            
+
             return jsonify({
-                "message": "This prediction already exists in your history.",
-                "predicted_class": existing_result.predicted_class,
-                "confirmed_class": confirmed_class_display,
-                "created_at": existing_result.created_at.isoformat() if existing_result.created_at else None,
+                "predicted_class": predicted_class_name,
                 "sepal_length": sepal_length,
                 "sepal_width": sepal_width,
                 "petal_length": petal_length,
                 "petal_width": petal_width
             }), 200
 
-   
-        features = np.array([[sepal_length, sepal_width, petal_length, petal_width]])
-        pred_index = model.predict(features)[0]
-        predicted_class_name = TARGET_NAMES[pred_index]
-
-        new_iris_entry = IrisResult(
-            user_id=api_key_entry.user_id,
-            service_id=iris_service_id,
-            api_key_id=api_key_entry.id,
-            sepal_length=sepal_length,
-            sepal_width=sepal_width,
-            petal_length=petal_length,
-            petal_width=petal_width,
-            predicted_class=predicted_class_name,
-            model_version='1.0',
-            confirm=False,
-            is_deleted=False
-        )
-        db.session.add(new_iris_entry)
-        db.session.flush()
-
-        new_usage_log = UsageLog(
-            user_id=api_key_entry.user_id,
-            service_id=iris_service_id,
-            api_key_id=api_key_entry.id,
-            usage_type=UsageType.API_KEY,
-            endpoint=request.path,
-            inference_timestamp=datetime.now(),
-            remote_addr=request.remote_addr,
-            response_status_code=200,
-            request_data_summary=str(data)[:200],
-            log_status='정상',
-            prediction_result_id=new_iris_entry.id
-        )
-        db.session.add(new_usage_log)
-        db.session.commit()
-
-        return jsonify({
-            "predicted_class": predicted_class_name,
-            "confirmed_class": "not available",
-            "sepal_length": sepal_length,
-            "sepal_width": sepal_width,
-            "petal_length": petal_length,
-            "petal_width": petal_width
-        }), 200
+        except Exception as e:
+            # 오류 발생 시, 모든 변경 사항을 되돌립니다.
+            db.session.rollback()
 
     except Exception as e:
+        # 광범위한 예외 처리를 하나로 통합
+        logging.error(f"Unexpected error in /api/predict (API Key): {e}", exc_info=True)
         db.session.rollback()
-        current_app.logger.error(f"Error processing API predict request: {e}", exc_info=True)
         return jsonify({"error": "An unexpected error occurred."}), 500
 
 
