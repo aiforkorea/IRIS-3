@@ -33,7 +33,7 @@ class UserLogType(enum.Enum):  # 사용자 로그 구분
         return value in cls._value2member_map_  # Enum의 모든 값 리스트를 검색
 
 class UsageType(enum.Enum):
-    LOGIN = "login"
+    #LOGIN = "login"
     API_KEY = "api_key"
     WEB_UI = "web_ui"
     @classmethod      # 권고

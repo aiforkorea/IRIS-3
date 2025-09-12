@@ -1,0 +1,21 @@
+{# apps/iris/templates/iris_base.html #}
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    {# 이 부분에 mt-4 클래스를 추가하여 위쪽 마진을 줍니다. #}
+    <div class="row mb-3 mt-4"> {# <-- 여기에 mt-4 추가 #}
+        <div class="col-md-4 d-grid gap-2 mb-2">
+            <a href="{{ url_for('iris.iris_predict') }}" class="btn btn-primary">예측</a>   
+        </div>
+        <div class="col-md-4 d-grid gap-2 mb-2">
+            <a href="{{ url_for('iris.results') }}" class="btn btn-secondary">추론 목록</a> 
+        </div>
+        <div class="col-md-4 d-grid gap-2 mb-2">
+            <a href="{{ url_for('iris.logs') }}" class="btn btn-secondary">로그 목록</a> 
+        </div>
+    </div>
+    <hr>
+    {% block iris_content %}{% endblock %}
+</div>
+{% endblock %}

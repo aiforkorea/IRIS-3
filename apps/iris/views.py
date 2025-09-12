@@ -1,16 +1,19 @@
 # apps/iris/views.py
-from flask import Flask, flash, redirect, request, render_template, jsonify, abort, current_app, url_for, g
+import csv
+from io import StringIO
+from flask import Flask, Response, flash, redirect, request, render_template, jsonify, abort, current_app, url_for, g
 import pickle, os
 import logging, functools
-from sqlalchemy import desc, func
+from sqlalchemy import String, cast, desc, func, or_
+from sqlalchemy.orm import joinedload
 from apps.extensions import csrf
 from apps.dbmodels import PredictionResult, db, APIKey, UsageLog, UsageType, Service, Match, UserType, MatchStatus
 from apps.iris.dbmodels import IrisResult
 import numpy as np
 from flask_login import current_user, login_required
-from apps.iris.forms import EmptyForm, IrisUserForm
+from apps.iris.forms import EmptyForm, IrisLogSearchForm, IrisUserForm
 from . import iris
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 # 데코레이터 import 추가
 from apps.decorators import admin_required, expert_required
 
@@ -289,9 +292,11 @@ def confirm_result(result_id):
         abort(403)
 
     confirmed_class = request.form.get('confirmed_class')
+    print(f"confirmed class",confirmed_class)
     if confirmed_class in ['setosa', 'versicolor', 'virginica']:
         result.confirmed_class = confirmed_class
         result.confirm = True
+        print(f"result.confirm",result.confirm)
         result.confirmed_at = datetime.now()
         db.session.flush()                       
         try:
@@ -307,7 +312,8 @@ def confirm_result(result_id):
                 print(f"Recent log found: {recent_log.timestamp}")
             else:
                 print("No logs found for this prediction_result_id.")
-        
+            
+            print(f"추론확인 starts")
             new_usage_log = UsageLog(
                 #user_id=recent_log.user_id,    
                 user_id=current_user.id,      
@@ -362,7 +368,7 @@ def edit_confirmed_class(result_id):
                         api_key_id=recent_log.api_key_id,
                         endpoint=request.path,
                         usage_type=UsageType.WEB_UI,
-                        log_status='추론수정',  
+                        log_status='추론수정',       # 
                         inference_timestamp=recent_log.inference_timestamp,
                         remote_addr=request.remote_addr,
                         response_status_code=200,
@@ -426,22 +432,158 @@ def delete_result(result_id):
     return redirect(url_for('iris.results'))
 
 # 수정된 logs() 함수
-@iris.route('/logs')
+PER_PAGE = 10
+
+@iris.route('/logs', methods=['GET', 'POST'])
 @login_required
 def logs():
-    # 사용자 권한에 따른 로그 조회 범위 설정 수정
+    form = IrisLogSearchForm(request.form if request.method == 'POST' else request.args)
+    filtered_args = {}
+
+    logs_query = UsageLog.query.options(
+        joinedload(UsageLog.user),
+        joinedload(UsageLog.api_key),
+        joinedload(UsageLog.service)
+    )
+
+    # 사용자 권한에 따른 로그 조회 범위 설정
     if current_user.is_admin():
-        user_logs = UsageLog.query.order_by(UsageLog.timestamp.desc()).all()
+        # 관리자는 모든 로그를 볼 수 있음
+        pass
     elif current_user.is_expert():
         matched_user_ids = [m.user_id for m in Match.query.filter_by(expert_id=current_user.id, status=MatchStatus.IN_PROGRESS).all()]
-        #print(matched_user_ids)
-        user_logs = UsageLog.query.filter(
-            (UsageLog.user_id.in_(matched_user_ids)) | (UsageLog.user_id == current_user.id)
-        ).order_by(UsageLog.timestamp.desc()).all()
-    else: # 일반 사용자
-        user_logs = UsageLog.query.filter_by(user_id=current_user.id).order_by(UsageLog.timestamp.desc()).all()
+        logs_query = logs_query.filter(
+            or_(
+                UsageLog.user_id.in_(matched_user_ids), 
+                UsageLog.user_id == current_user.id
+            )
+        )
+    else:  # 일반 사용자
+        logs_query = logs_query.filter_by(user_id=current_user.id)
 
-    return render_template('iris/user_logs.html', title='AI로그이력', results=user_logs)
+    # 폼 데이터에 따라 쿼리 필터링
+    if form.validate() or request.method == 'GET':
+        if form.keyword.data:
+            keyword = f"%{form.keyword.data}%"
+            logs_query = logs_query.filter(
+                or_(
+                    cast(UsageLog.user_id, String).ilike(keyword),
+                    cast(UsageLog.service_id, String).ilike(keyword),
+                    cast(UsageLog.prediction_result_id, String).ilike(keyword),
+                )
+            )
+            filtered_args['keyword'] = form.keyword.data
+        if form.usage_type.data:
+            logs_query = logs_query.filter(UsageLog.usage_type.ilike(form.usage_type.data))
+            filtered_args['usage_type'] = form.usage_type.data
+        if form.log_status.data:
+            logs_query = logs_query.filter(UsageLog.log_status.ilike(form.log_status.data))
+            filtered_args['log_status'] = form.log_status.data
+
+        # 날짜 필터링
+        if form.start_date.data and form.end_date.data:
+            start_of_day = datetime.combine(form.start_date.data, time.min)
+            end_of_day = datetime.combine(form.end_date.data, time.max)
+            date_field = getattr(UsageLog, form.date_field.data)
+            logs_query = logs_query.filter(date_field.between(start_of_day, end_of_day))
+            filtered_args['start_date'] = form.start_date.data.isoformat()
+            filtered_args['end_date'] = form.end_date.data.isoformat()
+            filtered_args['date_field'] = form.date_field.data
+
+    if request.method == 'POST':
+        return redirect(url_for('iris.logs', **filtered_args))
+    
+    page = request.args.get('page', 1, type=int)
+    logs_pagination = logs_query.order_by(UsageLog.timestamp.desc()).paginate(
+        page=page,
+        per_page=PER_PAGE,
+        error_out=False
+    )
+    
+    return render_template(
+        'iris/user_logs.html',
+        title='AI 로그 이력',
+        form=form,
+        logs=logs_pagination.items,
+        pagination=logs_pagination,
+        filtered_args=filtered_args,
+    )
+
+
+@iris.route('/logs/download-csv')
+@login_required
+def logs_download_csv():
+    """필터링된 사용 로그를 CSV 파일로 다운로드합니다."""
+    form = IrisLogSearchForm(request.args)
+    logs_query = UsageLog.query.options(
+        joinedload(UsageLog.user),
+        joinedload(UsageLog.api_key),
+        joinedload(UsageLog.service)
+    )
+
+    # 사용자 권한에 따른 로그 조회 범위 설정 (logs() 함수와 동일하게 적용)
+    if current_user.is_admin():
+        pass
+    elif current_user.is_expert():
+        matched_user_ids = [m.user_id for m in Match.query.filter_by(expert_id=current_user.id, status=MatchStatus.IN_PROGRESS).all()]
+        logs_query = logs_query.filter(
+            or_(
+                UsageLog.user_id.in_(matched_user_ids), 
+                UsageLog.user_id == current_user.id
+            )
+        )
+    else:
+        logs_query = logs_query.filter_by(user_id=current_user.id)
+
+    # 쿼리 파라미터에 따라 필터링 (logs() 함수와 동일한 로직)
+    if form.keyword.data:
+        keyword = f"%{form.keyword.data}%"
+        logs_query = logs_query.filter(
+            or_(
+                cast(UsageLog.user_id, String).ilike(keyword),
+                cast(UsageLog.service_id, String).ilike(keyword),
+                cast(UsageLog.prediction_result_id, String).ilike(keyword),
+            )
+        )
+    if form.usage_type.data:
+        logs_query = logs_query.filter(UsageLog.usage_type.ilike(form.usage_type.data))
+    if form.log_status.data:
+        logs_query = logs_query.filter(UsageLog.log_status.ilike(form.log_status.data))
+    if form.start_date.data and form.end_date.data:
+        start_of_day = datetime.combine(form.start_date.data, time.min)
+        end_of_day = datetime.combine(form.end_date.data, time.max)
+        date_field = getattr(UsageLog, form.date_field.data)
+        logs_query = logs_query.filter(date_field.between(start_of_day, end_of_day))
+
+    logs = logs_query.order_by(UsageLog.timestamp.desc()).all()
+    
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    headers = [
+        "ID", "사용자 ID", "서비스 ID", "추론 ID", "로그 타입", "로그 상태",
+        "엔드포인트", "추론 시각", "로그 시각", "원격 주소", "응답 상태 코드"
+    ]
+    writer.writerow(headers)
+    
+    for log in logs:
+        row = [
+            log.id, log.user_id, log.service_id, log.prediction_result_id,
+            log.usage_type.value, log.log_status,
+            log.endpoint,
+            log.inference_timestamp.strftime('%Y-%m-%d %H:%M:%S') if log.inference_timestamp else '-',
+            log.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+            log.remote_addr, log.response_status_code
+        ]
+        writer.writerow(row)
+    
+    output_str = output.getvalue()
+    output_bytes = output_str.encode('utf-8-sig')
+    output.close()
+    
+    response = Response(output_bytes, mimetype='text/csv; charset=utf-8-sig')
+    response.headers['Content-Disposition'] = f'attachment; filename=iris_log_results_{datetime.now().strftime("%Y%m%d%H%M%S")}.csv'
+    return response
 #
 @iris.route('/api/predict', methods=['POST'])
 @csrf.exempt

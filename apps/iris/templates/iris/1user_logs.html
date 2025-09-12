@@ -43,7 +43,7 @@
                                 {% endif %}
                             </td>
                             {# 로그 타입에 따라 색상을 다르게 보여줄 수 있도록 클래스 추가 #}
-                            <td><span class="badge {% if result.usage_type == 'UsageType.LOGIN' %}bg-success{% elif result.usage_type == 'UsageType.API_KEY' %}bg-danger{% else %}bg-secondary{% endif %}">{{ result.usage_type }}</span></td>   
+                            {# <td><span class="badge {% if result.usage_type == 'UsageType.LOGIN' %}bg-success{% elif result.usage_type == 'UsageType.API_KEY' %}bg-danger{% else %}bg-secondary{% endif %}">{{ result.usage_type }}</span></td>  #}
                             <td>{{ result.endpoint }}</td>
                             <td>{{ result.inference_timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
                             <td>{{ result.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
