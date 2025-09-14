@@ -251,6 +251,15 @@ def results():
             flash('날짜 입력이 잘못되었습니다.', 'danger')
             has_date_filter_error = True
 
+    # **오류 발생 시에도 filtered_args를 전달하도록 수정**
+    filtered_args = {
+        'search': search_query,
+        'confirm': confirm_query,
+        'date_filter_type': date_filter_type,
+        'start_date': start_date_str,
+        'end_date': end_date_str
+    }
+
     if has_date_filter_error:
         # 오류가 발생한 경우 빈 결과를 반환
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
@@ -260,13 +269,14 @@ def results():
             results=[],
             form=EmptyForm(),
             pagination=pagination,
+            filtered_args=filtered_args,
             search_query=search_query,
             confirm_query=confirm_query,
             date_filter_type=date_filter_type,
             start_date=start_date_str,
             end_date=end_date_str,
         )
-
+    # 검색 및 필터링 로직 (오류가 없을 경우에만 실행)
     if search_query:
         query = query.filter(
             (IrisResult.predicted_class.ilike(f'%{search_query}%')) |
@@ -287,13 +297,21 @@ def results():
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     user_results = pagination.items
     form = EmptyForm() 
-
+    # _macros.html을 이용한 pagination을 위한 filtered_args 추가
+    filtered_args = {
+        'search': search_query,
+        'confirm': confirm_query,
+        'date_filter_type': date_filter_type,
+        'start_date': start_date_str,
+        'end_date': end_date_str
+    }
     return render_template(
         'iris/user_results.html',
         title='추론결과',
         results=user_results,
         form=form,
         pagination=pagination,
+        filtered_args=filtered_args,   # _macros.html을 이용한 pagination을 위한 추가
         search_query=search_query,
         confirm_query=confirm_query,
         date_filter_type=date_filter_type,
@@ -456,12 +474,113 @@ def delete_result(result_id):
         flash(f'결과 삭제 중 오류가 발생했습니다: {e}', 'danger')
     return redirect(url_for('iris.results'))
 
-# 수정된 logs() 함수
-PER_PAGE = 10
+@iris.route('/results/download_csv')
+@login_required
+def results_download_csv():
+    """필터링된 추론 결과를 CSV 파일로 다운로드합니다."""
+    
+    # 1. 사용자 권한 확인
+    # logs_download_csv와 동일하게 권한이 없을 경우 early return
+    if not (current_user.is_admin() or current_user.is_expert() or current_user.is_user()):
+        flash("이 기능에 접근할 권한이 없습니다.", "danger")
+        return redirect(url_for('iris.results'))
+
+    # 2. 쿼리 구성 및 필터링
+    # Flask-WTF form을 사용하여 request.args를 처리하는 logs_download_csv 스타일 적용
+    # IrisResultSearchForm이 필요합니다. (코드가 없으므로 가정하고 작성)
+    # form = IrisResultSearchForm(request.args) 
+    
+    query = IrisResult.query
+    
+    # logs_download_csv와 동일한 방식으로 사용자 권한에 따른 필터링 적용
+    if current_user.is_admin():
+        pass
+    elif current_user.is_expert():
+        matched_user_ids = [m.user_id for m in Match.query.filter_by(expert_id=current_user.id, status=MatchStatus.IN_PROGRESS).all()]
+        query = query.filter(
+            or_(
+                IrisResult.user_id.in_(matched_user_ids),  
+                IrisResult.user_id == current_user.id
+            )
+        )
+    else:  # 일반 사용자 (is_user)
+        query = query.filter_by(user_id=current_user.id)
+    
+    # logs_download_csv와 동일한 방식으로 검색 및 필터링 적용
+    search_query = request.args.get('search', '')
+    if search_query:
+        keyword = f"%{search_query}%"
+        query = query.filter(
+            or_(
+                IrisResult.predicted_class.ilike(keyword),
+                IrisResult.confirmed_class.ilike(keyword),
+                cast(IrisResult.id, String).ilike(keyword)
+            )
+        )
+    
+    confirm_query = request.args.get('confirm', '')
+    if confirm_query == 'true':
+        query = query.filter(IrisResult.confirmed_class.isnot(None))
+    elif confirm_query == 'false':
+        query = query.filter(IrisResult.confirmed_class.is_(None))
+
+    date_filter_type = request.args.get('date_filter_type', '')
+    start_date_str = request.args.get('start_date', '')
+    end_date_str = request.args.get('end_date', '')
+    
+    if start_date_str and end_date_str and date_filter_type:
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d')
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d')
+            end_of_day = datetime.combine(end_date, time.max)
+            date_field = getattr(IrisResult, date_filter_type)
+            query = query.filter(date_field.between(start_date, end_of_day))
+        except (ValueError, AttributeError):
+            flash("유효하지 않은 날짜 형식 또는 기준일자입니다.", "danger")
+            return redirect(url_for('iris.results'))
+
+    results = query.order_by(IrisResult.created_at.desc()).all()
+
+    # 3. CSV 생성 및 반환
+    # logs_download_csv와 동일하게 StringIO, csv.writer, Response 사용
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    headers = [
+        "ID", "사용자ID", "꽃받침길이", "꽃받침너비", "꽃잎길이", "꽃잎너비",
+        "예측품종", "확인품종", "추론시간", "확인시간"
+    ]
+    writer.writerow(headers)
+
+    for result in results:
+        row = [
+            result.id,
+            result.user_id,
+            result.sepal_length,
+            result.sepal_width,
+            result.petal_length,
+            result.petal_width,
+            result.predicted_class,
+            result.confirmed_class if result.confirmed_class else '미확인',
+            result.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+            result.confirmed_at.strftime('%Y-%m-%d %H:%M:%S') if result.confirmed_at else '-'
+        ]
+        writer.writerow(row)
+
+    output_str = output.getvalue()
+    output_bytes = output_str.encode('utf-8-sig')
+    output.close()
+    
+    response = Response(output_bytes, mimetype='text/csv; charset=utf-8-sig')
+    filename = f'iris_result_results_{datetime.now().strftime("%Y%m%d%H%M%S")}.csv'
+    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+    
+    return response
 
 @iris.route('/logs', methods=['GET', 'POST'])
 @login_required
 def logs():
+    per_page = 10
     form = IrisLogSearchForm(request.form if request.method == 'POST' else request.args)
     filtered_args = {}
 
@@ -521,7 +640,7 @@ def logs():
     page = request.args.get('page', 1, type=int)
     logs_pagination = logs_query.order_by(UsageLog.timestamp.desc()).paginate(
         page=page,
-        per_page=PER_PAGE,
+        per_page=per_page,
         error_out=False
     )
     
