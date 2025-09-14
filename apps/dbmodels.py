@@ -72,8 +72,10 @@ class User(db.Model, UserMixin):
     usage_count = db.Column(db.Integer, default=0)
     daily_limit = db.Column(db.Integer, default=1000)
     monthly_limit = db.Column(db.Integer, default=5000)
-    created_at = db.Column(db.DateTime, default=func.now())
-    updated_at = db.Column(db.DateTime, default=func.now(), onupdate=func.now())
+    #created_at = db.Column(db.DateTime, default=func.now())
+    created_at = db.Column(db.DateTime, default=datetime.now())
+    #updated_at = db.Column(db.DateTime, default=func.now(), onupdate=func.now())
+    updated_at = db.Column(db.DateTime, default=datetime.now(), onupdate=datetime.now())
     # [새로 추가된 필드]
     match_status = db.Column(db.Enum(MatchStatus), nullable=False, default=MatchStatus.UNASSIGNED) # 사용자의 매칭 상태
 
@@ -162,7 +164,8 @@ class Log(db.Model):
     log_title = db.Column(db.String(50), nullable=False)
     log_summary = db.Column(db.Text)
     
-    timestamp = db.Column(db.DateTime, default=func.now(), index=True)
+    #timestamp = db.Column(db.DateTime, default=func.now(), index=True)
+    timestamp = db.Column(db.DateTime, default=datetime.now(), index=True)
     remote_addr = db.Column(db.String(45))
     response_status_code = db.Column(db.Integer)
 
@@ -175,7 +178,8 @@ class Match(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     expert_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     status = db.Column(db.Enum(MatchStatus), nullable=False, default=MatchStatus.IN_PROGRESS)
-    created_at = db.Column(db.DateTime, default=func.now())
+    #created_at = db.Column(db.DateTime, default=func.now())
+    created_at = db.Column(db.DateTime, default=datetime.now())
     closed_at = db.Column(db.DateTime, nullable=True)
     user_rating = db.Column(db.Integer, nullable=True)
     expert_notes = db.Column(db.Text, nullable=True)
@@ -205,7 +209,8 @@ class MatchLog(db.Model):
     #action_summary = db.Column(db.String(255))
     #details = db.Column(db.Text, nullable=True)
 
-    timestamp = db.Column(db.DateTime, default=func.now())
+    #timestamp = db.Column(db.DateTime, default=func.now())
+    timestamp = db.Column(db.DateTime, default=datetime.now())
     remote_addr = db.Column(db.String(45), nullable=True)
     response_code = db.Column(db.Integer, nullable=True)
     
@@ -228,8 +233,10 @@ class Service(db.Model):
     description = db.Column(db.Text, nullable=False)
     keywords = db.Column(db.String(200), nullable=False)
     service_endpoint = db.Column(db.String(255), nullable=True)  # 서비스 엔드포인트 함수, 일단 True
-    created_at=db.Column(db.DateTime, default=func.now())
-    updated_at=db.Column(db.DateTime, default=func.now(), onupdate=func.now())
+    #created_at=db.Column(db.DateTime, default=func.now())
+    created_at=db.Column(db.DateTime, default=datetime.now())
+    #updated_at=db.Column(db.DateTime, default=func.now(), onupdate=func.now())
+    updated_at=db.Column(db.DateTime, default=datetime.now(), onupdate=datetime.now())
 
     # 관계
     subscriptions = db.relationship('Subscription', back_populates='service', lazy=True, cascade="all, delete-orphan")
@@ -245,7 +252,8 @@ class Subscription(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     service_id = db.Column(db.Integer, db.ForeignKey('services.id'), nullable=False) 
     status = db.Column(db.String(20), default='pending', nullable=False) # pending, approved, rejected
-    request_date = db.Column(db.DateTime, nullable=False, default=func.now())
+    #request_date = db.Column(db.DateTime, nullable=False, default=func.now())
+    request_date = db.Column(db.DateTime, nullable=False, default=datetime.now())
     approval_date = db.Column(db.DateTime, nullable=True)
 
     user = db.relationship('User', back_populates='subscriptions')
@@ -263,8 +271,10 @@ class APIKey(db.Model):
     description = db.Column(db.String(100), nullable=True)
     user_id=db.Column(db.Integer, db.ForeignKey('users.id'), index=True, comment="Key 소유 사용자ID")
     is_active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=func.now())
-    last_used = db.Column(db.DateTime, default=func.now(), onupdate=func.now())
+    #created_at = db.Column(db.DateTime, default=func.now())
+    created_at = db.Column(db.DateTime, default=datetime.now())
+    #last_used = db.Column(db.DateTime, default=func.now(), onupdate=func.now())
+    last_used = db.Column(db.DateTime, default=datetime.now(), onupdate=datetime.now())
     usage_count = db.Column(db.Integer, default=0) # 이 API 키를 통한 총 사용 횟수
     daily_limit = db.Column(db.Integer, default=1000)
     monthly_limit = db.Column(db.Integer, default=5000) 
@@ -292,8 +302,10 @@ class UsageLog(db.Model):
     login_confirm = db.Column(db.String(10), nullable=True) # 로그인 여부 확인용 (예: 'success', 'fail')
     inference_timestamp = db.Column(db.DateTime, index=True)  # 추론 시각
 
-    timestamp = db.Column(db.DateTime, default=func.now(), index=True)
-    last_used = db.Column(db.DateTime, default=func.now(), onupdate=func.now()) # 마지막 사용 시간
+    #timestamp = db.Column(db.DateTime, default=func.now(), index=True)
+    timestamp = db.Column(db.DateTime, default=datetime.now(), index=True)
+    #last_used = db.Column(db.DateTime, default=func.now(), onupdate=func.now()) # 마지막 사용 시간
+    last_used = db.Column(db.DateTime, default=datetime.now(), onupdate=datetime.now()) # 마지막 사용 시간
     remote_addr = db.Column(db.String(45))
     request_data_summary = db.Column(db.Text)
     response_status_code = db.Column(db.Integer)
@@ -322,7 +334,8 @@ class PredictionResult(db.Model):
     model_version = db.Column(db.String(20), default='1.0')
     confirmed_class = db.Column(db.String(50))
     confirm = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=func.now(), index=True)
+    #created_at = db.Column(db.DateTime, default=func.now(), index=True)
+    created_at = db.Column(db.DateTime, default=datetime.now(), index=True)
     confirmed_at = db.Column(db.DateTime, index=True)  # default=datetime.now 설정하면 안됨
 
     # 다형성 설정: 어떤 예측 결과 유형인지 구분
