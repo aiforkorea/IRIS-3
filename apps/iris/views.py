@@ -26,6 +26,7 @@ TARGET_NAMES = ['setosa', 'versicolor', 'virginica']
 from apps.config import Config
 
 @iris.route('/services')
+@login_required
 def services():
     current_app.logger.debug("search_query: %s", "Starts services")
     return render_template('iris/services.html')
@@ -33,6 +34,8 @@ def services():
 @iris.route('/iris_predict', methods=['GET', 'POST'])
 @login_required
 def iris_predict():
+    iris_service_id = 1    
+
     form = IrisUserForm()
     if form.validate_on_submit():
         sepal_length = form.sepal_length.data
@@ -48,18 +51,40 @@ def iris_predict():
             petal_length=petal_length,
             petal_width=petal_width,
             is_deleted=False, # Soft delete된 데이터는 제외
-            user_id=current_user.id #
+            user_id=current_user.id # 전체 DB에서 중복확인시, 라인 삭제
         ).first()
 
         can_confirm = current_user.is_expert() or current_user.is_admin()
         
         existing_result_found = False
-
+        # 입력 데이터 딕셔너리 생성
+        input_data = {
+            'sepal_length': sepal_length,
+            'sepal_width': sepal_width,
+            'petal_length': petal_length,
+            'petal_width': petal_width
+        }
         if existing_result:
             existing_result_found = True
             
             # 확인 클래스 값이 None이면 '미확인 not available'으로 표시
             confirmed_class_display = existing_result.confirmed_class if existing_result.confirmed_class else "not available"
+
+            # log 추가
+            redundancy_log = UsageLog(
+                user_id=current_user.id,
+                service_id=iris_service_id,
+                usage_type=UsageType.WEB_UI,
+                endpoint=request.path,
+                inference_timestamp=datetime.now(),
+                remote_addr=request.remote_addr,
+                response_status_code=200,
+                request_data_summary=str(input_data)[:200],
+                log_status='중복',
+                prediction_result_id=existing_result.id
+            )
+            db.session.add(redundancy_log)
+            db.session.commit()
 
             return render_template('iris/predict.html',
                                    result=existing_result.predicted_class,
@@ -76,7 +101,6 @@ def iris_predict():
         else:
             # 새로운 입력값인 경우
             pred = model.predict(features)[0]
-            iris_service_id = 1    
 
             new_iris_result = IrisResult(
                 user_id=current_user.id,
@@ -99,6 +123,7 @@ def iris_predict():
                 response_status_code=200,
                 inference_timestamp=datetime.now(),
                 service_id=iris_service_id,
+                request_data_summary=str(input_data)[:200],
                 prediction_result_id=new_iris_result.id
             )
             db.session.add(new_usage_log)
@@ -628,7 +653,7 @@ def api_predict():
             petal_length=petal_length,
             petal_width=petal_width,
             is_deleted=False, # Soft delete된 데이터는 제외
-            user_id=api_key_entry.user_id #
+            user_id=api_key_entry.user_id # 전체 DB에서 중복확인시 라인 삭제
         ).first()
 
         if existing_result:

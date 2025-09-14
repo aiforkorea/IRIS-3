@@ -4,11 +4,11 @@
 {% block content %}
 <div class="container">
     <div class="row mb-3 mt-4">
-        {% if current_user.is_user() %}
+        {% if current_user.is_authenticated and current_user.is_user() %}
             <div class="col-md-12 d-grid gap-2 mb-2">
                 <a href="{{ url_for('iris.iris_predict') }}" class="btn btn-primary">예측</a>
             </div>
-        {% elif current_user.is_expert() or current_user.is_admin() %}
+        {% elif current_user.is_authenticated and (current_user.is_expert() or current_user.is_admin()) %}
             <div class="col-md-4 d-grid gap-2 mb-2">
                 <a href="{{ url_for('iris.iris_predict') }}" class="btn btn-primary">예측</a>
             </div>
